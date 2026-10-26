@@ -349,6 +349,7 @@ details.cg-sec summary{cursor:pointer;font-family:"Barlow Condensed",sans-serif;
 @media (max-width:800px){.cg-wrap{flex-direction:column;max-height:none}.cg-img{width:100%;max-height:220px}.cg-body{max-height:none}}
 .bar.mpb{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.22) 0 5px,transparent 5px 10px)}
 .bar.mpb::before{content:"MB";font-size:10px;font-weight:700;background:#fff;color:#333;border-radius:3px;padding:0 3px;margin-right:5px;flex:none}
+.tipo-sel{display:flex;flex-direction:column;gap:6px}.tipo-sel label{flex-direction:row!important;align-items:center;gap:8px!important;color:var(--ink)!important;font-size:15px!important;cursor:pointer}
 .guide{background:var(--info-bg);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
 .guide summary{cursor:pointer;padding:10px 16px;font-weight:600;color:var(--info)}
 .guide-b{padding:0 16px 12px;max-width:95ch;font-size:14px}
@@ -689,12 +690,14 @@ $("#nextM").onclick=()=>{S.m++;if(S.m>11){S.m=0;S.y++}S.clipDay="";render()};
 $("#todayM").onclick=()=>{const d=new Date();S.y=d.getFullYear();S.m=d.getMonth();S.clipDay="";render()};
 
 /* ---------- CALENDARIO ---------- */
-const isMpPromo=p=>p.tipoMarca==="mp"&&!!mpOf(p.cadena);
-const promoBrand=p=>isMpPromo(p)?mpOf(p.cadena):PCATS[p.cat].marca;
+const isMpPromo=p=>p.tipoMarca==="mp";
+const MB_CATS={hummus:"Hummus",salsas:"Salsas",panificados:"Panes"};
+const mbName=(x,cid)=>{const mp=mpOf(cid);return genericName(x)+(mp?" "+mp:" (marca blanca)")};
+const promoBrand=p=>isMpPromo(p)?(mpOf(p.cadena)?mpOf(p.cadena)+" (marca blanca)":"Marca blanca"):PCATS[p.cat].marca;
 function promoLabel(p){
   const d=p.mecanica==="% de descuento"||p.mecanica==="2da unidad al %"?(p.descuento?p.descuento+"%":""):"";
   const m=p.mecanica==="% de descuento"?(d+" OFF"):p.mecanica==="2da unidad al %"?("2da al "+d):p.mecanica==="Precio especial"&&p.precio?fmt$(p.precio):p.mecanica||"";
-  const mpn=isMpPromo(p)?mpOf(p.cadena):"";const prods=p.productos?.length?p.productos.map(id=>{const x=prodById(id);return x?(mpn?genericName(x)+" "+mpn:x.nombre):id}).join(", "):(p.cat==="delidips"?"Todas las marcas":p.cat==="aconfirmar"?"Productos a definir":mpn?"Toda la línea "+mpn:"Toda la línea");
+  const mb=isMpPromo(p);const prods=p.productos?.length?p.productos.map(id=>{const x=prodById(id);return x?(mb?mbName(x,p.cadena):x.nombre):id}).join(", "):(p.cat==="delidips"?"Todas las marcas":p.cat==="aconfirmar"?"Productos a definir":mb?(MB_CATS[p.cat]||"")+" "+(mpOf(p.cadena)||"marca blanca")+" · todas las variedades":"Toda la línea");
   return {m,prods};
 }
 function filteredPromos(){
@@ -814,14 +817,16 @@ function openPromo(p,day,prefill){
   const d=day||(ym()===TODAY.slice(0,7)?TODAY:ym()+"-01");
   p=p?JSON.parse(JSON.stringify(p)):prefill?prefill:{id:uid(),cadena:S.calCadena||"dia",cat:"hummus",productos:[],mecanica:"% de descuento",descuento:"",precio:"",desde:d,hasta:d,estado:"plan",notasCom:"",cumpl:"pend",obsMkt:""};
   const dlg=$("#dlg");
-  const prodPick=()=>{const ps=PROD().filter(x=>p.cat==="delidips"||p.cat==="aconfirmar"||x.cat===p.cat);const sur=surtidoOf(p.cadena);return (ps.length?ps.map(x=>`<label><input type="checkbox" value="${x.id}" ${p.productos?.includes(x.id)?"checked":""}>${h(p.tipoMarca==="mp"&&mpOf(p.cadena)?genericName(x)+" "+mpOf(p.cadena):x.nombre)}</label>`).join(""):`<span class="muted small">Sin productos cargados para esta categoría.</span>`)+`<div class="small muted" style="flex-basis:100%;margin-top:4px">${h(acuerdoNote(p.cadena,p.cat))}</div>`};
+  const prodPick=()=>{const ps=PROD().filter(x=>p.cat==="delidips"||p.cat==="aconfirmar"||x.cat===p.cat);const sur=surtidoOf(p.cadena);return (ps.length?ps.map(x=>`<label><input type="checkbox" value="${x.id}" ${p.productos?.includes(x.id)?"checked":""}>${h(p.tipoMarca==="mp"?mbName(x,p.cadena):x.nombre)}</label>`).join(""):`<span class="muted small">Sin productos cargados para esta categoría.</span>`)+(p.tipoMarca==="mp"?"":`<div class="small muted" style="flex-basis:100%;margin-top:4px">${h(acuerdoNote(p.cadena,p.cat))}</div>`)};
   const det=isNew?[]:detectedFor(p);
   dlg.innerHTML=`<form method="dialog" id="pf">
     <div class="dlg-h"><h3>${isNew?"Nueva promoción":"Editar promoción"}</h3><button class="iconbtn" value="x" formnovalidate aria-label="Cerrar">×</button></div>
     <div class="dlg-b"><div class="form">
       <label>Cadena<select name="cadena">${CADENAS.map(c=>`<option value="${c.id}" ${p.cadena===c.id?"selected":""}>${c.name}</option>`).join("")}</select></label>
-      <label class="full">¿De qué marca es la promo?<select name="tipoMarca"><option value="">Nuestras marcas (Kyros / Kansas)</option><option value="mp" ${p.tipoMarca==="mp"?"selected":""}>Marca blanca que fabricamos</option></select></label>
-      <label>Categoría<select name="cat">${Object.entries(PCATS).map(([k,c])=>`<option value="${k}" ${p.cat===k?"selected":""}>${k==="delidips"?"DeliDips · todas las marcas / combos":k==="aconfirmar"?"❓ A confirmar · en negociación, se define después":c.name+" · "+c.marca}</option>`).join("")}</select></label>
+      <fieldset class="full"><legend>¿De qué marca es la promo?</legend><div class="tipo-sel">
+        <label><input type="radio" name="tipoMarca" value="" ${p.tipoMarca!=="mp"?"checked":""}> <b>Nuestras marcas</b> <span class="muted small">Kyros · Salsas Kansas · Kansas Bakery</span></label>
+        <label><input type="radio" name="tipoMarca" value="mp" ${p.tipoMarca==="mp"?"checked":""}> <b>Marca blanca</b> <span class="muted small" id="mbHint">Hummus · Salsas · Panes que fabricamos para la cadena</span></label></div></fieldset>
+      <label>Categoría<select name="cat"></select></label>
       <fieldset class="full"><legend>Productos (sin marcar = toda la línea)</legend><div class="prodpick" id="pp">${prodPick()}</div></fieldset>
       <label>Mecánica<select name="mecanica">${MECANICAS.map(m=>`<option ${p.mecanica===m?"selected":""}>${m}</option>`).join("")}</select></label>
       <label>Descuento %<input type="number" name="descuento" min="0" max="100" step="0.5" value="${h(p.descuento)}" placeholder="ej. 25"></label>
@@ -840,9 +845,11 @@ function openPromo(p,day,prefill){
   </form>`;
   const f=dlg.querySelector("#pf");
   f.cat.onchange=()=>{p.cat=f.cat.value;p.productos=[];dlg.querySelector("#pp").innerHTML=prodPick()};
-  const syncTipo=()=>{const mp=mpOf(p.cadena);const o=f.tipoMarca.options[1];o.textContent=mp?`Marca blanca: ${mp}`:"Marca blanca (esta cadena no tiene)";o.disabled=!mp;if(!mp&&f.tipoMarca.value==="mp")f.tipoMarca.value="";p.tipoMarca=f.tipoMarca.value};syncTipo();
+  const fillCats=()=>{const mb=p.tipoMarca==="mp";const opts=mb?Object.entries(MB_CATS).map(([k,n])=>[k,n]):Object.entries(PCATS).map(([k,c])=>[k,k==="delidips"?"DeliDips · todas las marcas / combos":k==="aconfirmar"?"❓ A confirmar · en negociación, se define después":c.name+" · "+c.marca]);
+    if(!opts.some(o=>o[0]===p.cat))p.cat=opts[0][0];f.cat.innerHTML=opts.map(([k,n])=>`<option value="${k}" ${p.cat===k?"selected":""}>${n}</option>`).join("")};
+  const syncTipo=()=>{p.tipoMarca=(f.querySelector('input[name=tipoMarca]:checked')||{}).value||"";fillCats();const mp=mpOf(p.cadena);dlg.querySelector("#mbHint").textContent=mp?`Hummus · Salsas · Panes marca ${mp} (la fabricamos nosotros)`:"Hummus · Salsas · Panes que fabricamos para la cadena"};syncTipo();dlg.querySelector("#pp").innerHTML=prodPick();
   f.cadena.onchange=()=>{p.cadena=f.cadena.value;syncTipo();p.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);dlg.querySelector("#pp").innerHTML=prodPick()};
-  f.tipoMarca.onchange=()=>{p.tipoMarca=f.tipoMarca.value;p.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);dlg.querySelector("#pp").innerHTML=prodPick()};
+  f.querySelectorAll('input[name=tipoMarca]').forEach(r=>r.onchange=()=>{syncTipo();p.productos=[];dlg.querySelector("#pp").innerHTML=prodPick()});
   f.onsubmit=async e=>{
     if(e.submitter?.value!=="ok")return;
     const fd=new FormData(f);
@@ -955,7 +962,7 @@ function guessPid(it){if(it.productoId)return it.productoId;const t=normTxt(it.p
 function promoPct(it){const d=num(it.descuentoPct);if(d)return d;const l=num(it.precioLista),f=num(it.precioFinal);return l&&f&&f<l?(1-f/l)*100:null}
 function hasPromo(it){return !!(it.mecanica&&String(it.mecanica).trim())||!!promoPct(it)}
 function promoTxt(it){const pc=promoPct(it);return (it.mecanica&&String(it.mecanica).trim())||(pc?Math.round(pc)+"% OFF":"")}
-function genericName(p){return p.nombre.replace(/ (Kyros|Kansas)\b/,"")}
+function genericName(p){const n=p.nombre.replace(/ (Kyros|Kansas)\b/,"");return /Ketchup/.test(n)?n.replace(/^Salsa (American )?/,""):n}
 function mpProdName(p,mp,actual){const t=(actual||"").trim();if(!t)return genericName(p)+" "+mp;return normTxt(t).includes(normTxt(mp))?t:t+" "+mp}
 function mpCompareHTML(cid){
   const mp=mpOf(cid);if(!mp)return `<p class="muted small" style="margin:0">Esta cadena no tiene marca blanca que fabriquemos. Se carga en Dinámicas → Editar acuerdo.</p>`;
@@ -1563,7 +1570,7 @@ cal:{t:"Cómo leer el Calendario de promociones",b:`<p>Comercial carga las promo
 <li><b>Descuento promedio:</b> promedio simple de los % de descuento cargados (no incluye 2x1 o precios especiales sin %).</li>
 <li><b>Cumplidas:</b> de las promos que ya terminaron, qué porcentaje marketing marcó como cumplidas.</li>
 <li><b>Colores de barra:</b> naranja Kyros, rojo Salsas Kansas, dorado Kansas Bakery. Barra punteada = sin aprobar (propuesta o en negociación). Tachada = rechazada. ✓ cumplida, ◐ parcial, ✕ no cumplida.</li>
-<li><b>Marca blanca (MB):</b> también se pueden cargar las promos de las marcas blancas que fabricamos (ej. hummus marca Dia 25% OFF). Al cargar la promo, en “¿De qué marca es la promo?” se elige “Marca blanca”. Se ven rayadas y con la etiqueta MB, no cuentan en los totales de arriba ni en los compromisos, y se pueden ocultar con el filtro “Marca blanca”.</li><li><b>Fechas clave:</b> días pintados de violeta (fecha comercial), gris azulado (feriado) o verde agua (evento propio).</li>
+<li><b>Marca blanca (MB):</b> también se pueden cargar las promos de las marcas blancas que fabricamos (ej. 25% OFF en el hummus clásico marca blanca de Dia). Al cargar la promo, en “¿De qué marca es la promo?” se elige “Marca blanca” y después Hummus, Salsas o Panes y sus variedades. Se ven rayadas y con la etiqueta MB, no cuentan en los totales de arriba ni en los compromisos, y se pueden ocultar con el filtro “Marca blanca”.</li><li><b>Fechas clave:</b> días pintados de violeta (fecha comercial), gris azulado (feriado) o verde agua (evento propio).</li>
 <li><b>❗ junto al logo:</b> la cadena tiene un compromiso del acuerdo comercial que todavía no tiene promo cargada.</li>
 <li><b>Vistas:</b> Calendario (mes clásico), Por cadena (una fila por cadena) o Lista (tabla con estado y si la promo se vio en el clipping).</li></ul>`},
 clip:{t:"Cómo leer el Clipping",b:`<p>Es el relevamiento diario de <b>Kyros y Kansas</b> en la web o app de cada cadena: precios, promos y si se cumple lo planificado. Se elige la cadena, se toca “⚡ Cargar relevamiento” y se completan solo los precios y promos que se ven. Se puede adjuntar la captura como respaldo.</p>
