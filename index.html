@@ -347,6 +347,8 @@ details.others summary{cursor:pointer;font-size:13px;color:var(--muted)}
 details.cg-sec{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
 details.cg-sec summary{cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-size:19px;font-weight:600}
 @media (max-width:800px){.cg-wrap{flex-direction:column;max-height:none}.cg-img{width:100%;max-height:220px}.cg-body{max-height:none}}
+.bar.mpb{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.22) 0 5px,transparent 5px 10px)}
+.bar.mpb::before{content:"MB";font-size:10px;font-weight:700;background:#fff;color:#333;border-radius:3px;padding:0 3px;margin-right:5px;flex:none}
 .guide{background:var(--info-bg);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
 .guide summary{cursor:pointer;padding:10px 16px;font-weight:600;color:var(--info)}
 .guide-b{padding:0 16px 12px;max-width:95ch;font-size:14px}
@@ -657,6 +659,7 @@ function computeAlerts(){
 function clsOf(d){const t=TOL();return d<-2*t?"bad":d<-t?"warn":d>t?"above":"ok"}
 const CLS_LABEL={bad:"Muy por debajo",warn:"Por debajo",ok:"En objetivo",above:"Por encima"};
 function detectedFor(promo){
+  if(promo.tipoMarca==="mp")return S.clips.filter(c=>c.cadena===promo.cadena&&c.fecha>=promo.desde&&c.fecha<=promo.hasta&&(c.items||[]).some(it=>isMp(it,promo.cadena)&&hasPromo(it)&&(promo.cat==="delidips"||promo.cat==="aconfirmar"||it.categoria===promo.cat)&&(!promo.productos?.length||promo.productos.includes(guessPid(it)))));
   return S.clips.filter(c=>c.cadena===promo.cadena&&c.fecha>=promo.desde&&c.fecha<=promo.hasta&&(c.items||[]).some(it=>it.propio&&(promo.cat==="delidips"||promo.cat==="aconfirmar"||it.categoria===promo.cat)&&(it.mecanica||it.descuentoPct)&&(!promo.productos?.length||!it.productoId||promo.productos.includes(it.productoId))));
 }
 function compItems(){
@@ -686,18 +689,20 @@ $("#nextM").onclick=()=>{S.m++;if(S.m>11){S.m=0;S.y++}S.clipDay="";render()};
 $("#todayM").onclick=()=>{const d=new Date();S.y=d.getFullYear();S.m=d.getMonth();S.clipDay="";render()};
 
 /* ---------- CALENDARIO ---------- */
+const isMpPromo=p=>p.tipoMarca==="mp"&&!!mpOf(p.cadena);
+const promoBrand=p=>isMpPromo(p)?mpOf(p.cadena):PCATS[p.cat].marca;
 function promoLabel(p){
   const d=p.mecanica==="% de descuento"||p.mecanica==="2da unidad al %"?(p.descuento?p.descuento+"%":""):"";
   const m=p.mecanica==="% de descuento"?(d+" OFF"):p.mecanica==="2da unidad al %"?("2da al "+d):p.mecanica==="Precio especial"&&p.precio?fmt$(p.precio):p.mecanica||"";
-  const prods=p.productos?.length?p.productos.map(id=>prodById(id)?.nombre||id).join(", "):(p.cat==="delidips"?"Todas las marcas":p.cat==="aconfirmar"?"Productos a definir":"Toda la línea");
+  const mpn=isMpPromo(p)?mpOf(p.cadena):"";const prods=p.productos?.length?p.productos.map(id=>{const x=prodById(id);return x?(mpn?genericName(x)+" "+mpn:x.nombre):id}).join(", "):(p.cat==="delidips"?"Todas las marcas":p.cat==="aconfirmar"?"Productos a definir":mpn?"Toda la línea "+mpn:"Toda la línea");
   return {m,prods};
 }
 function filteredPromos(){
-  return promosInMonth().filter(p=>S.calCats.has(p.cat)&&(!S.calCadena||p.cadena===S.calCadena)&&(!S.calEstado||(S.calEstado===p.estado||S.calEstado===("c-"+(p.cumpl||"pend")))));
+  return promosInMonth().filter(p=>(S.calMp!==false||p.tipoMarca!=="mp")&&S.calCats.has(p.cat)&&(!S.calCadena||p.cadena===S.calCadena)&&(!S.calEstado||(S.calEstado===p.estado||S.calEstado===("c-"+(p.cumpl||"pend")))));
 }
 function renderCal(v,tb){
   tb.innerHTML=`
-    ${Object.entries(PCATS).map(([k,c])=>`<button class="chip" data-cat="${k}" aria-pressed="${S.calCats.has(k)}"><span class="sw" style="background:${c.color}"></span>${c.name}</button>`).join("")}
+    ${Object.entries(PCATS).map(([k,c])=>`<button class="chip" data-cat="${k}" aria-pressed="${S.calCats.has(k)}"><span class="sw" style="background:${c.color}"></span>${c.name}</button>`).join("")}<button class="chip" id="mpChip" aria-pressed="${S.calMp!==false}" title="Promos de las marcas blancas que fabricamos (Dia, Carrefour Classic, Cuisine & Co)"><span class="sw" style="background:repeating-linear-gradient(135deg,#888 0 3px,#ddd 3px 6px)"></span>Marca blanca</button>
     <select id="fCad" aria-label="Cadena"><option value="">Todas las cadenas</option>${CADENAS.map(c=>`<option value="${c.id}" ${S.calCadena===c.id?"selected":""}>${c.name}</option>`).join("")}</select>
     <select id="fEst" aria-label="Estado"><option value="">Todos los estados</option>
       <optgroup label="Comercial">${Object.entries(ESTADOS).map(([k,n])=>`<option value="${k}" ${S.calEstado===k?"selected":""}>${n}</option>`).join("")}</optgroup>
@@ -705,12 +710,13 @@ function renderCal(v,tb){
     <div class="seg" role="group" aria-label="Vista">${[["mes","Calendario"],["gantt","Por cadena"],["lista","Lista"]].map(([k,n])=>`<button data-view="${k}" aria-pressed="${S.calView===k}">${n}</button>`).join("")}</div>
     <button class="btn primary" id="newPromo">+ Nueva promo</button>`;
   tb.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{const k=b.dataset.cat;S.calCats.has(k)?S.calCats.delete(k):S.calCats.add(k);render()});
+  tb.querySelector("#mpChip").onclick=()=>{S.calMp=S.calMp===false;render()};
   tb.querySelector("#fCad").onchange=e=>{S.calCadena=e.target.value;render()};
   tb.querySelector("#fEst").onchange=e=>{S.calEstado=e.target.value;render()};
   tb.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{S.calView=b.dataset.view;try{localStorage.setItem("tm-calview",S.calView)}catch(e){}render()});
   tb.querySelector("#newPromo").onclick=()=>openPromo(null);
 
-  const all=promosInMonth().filter(p=>p.estado!=="cancel");
+  const all=promosInMonth().filter(p=>p.estado!=="cancel"&&p.tipoMarca!=="mp");
   const list=filteredPromos();
   const desc=all.filter(p=>p.descuento).map(p=>+p.descuento);
   const ev=all.filter(p=>p.hasta<TODAY);
@@ -728,7 +734,7 @@ function renderCal(v,tb){
   else if(S.calView==="mes")body=monthHTML(list);
   else body=listHTML(list);
   v.innerHTML=kpis+keyStripHTML()+`<div class="panel">${body}
-    <div class="legend"><span><i style="background:var(--hummus)"></i>Hummus · Kyros</span><span><i style="background:var(--salsas)"></i>Salsas Kansas</span><span><i style="background:var(--pan)"></i>Kansas Bakery</span><span><i style="background:var(--dd)"></i>DeliDips (todas las marcas)</span><span><i style="background:repeating-linear-gradient(135deg,var(--tbd) 0 4px,var(--tbd2) 4px 8px)"></i>❓ A confirmar (en negociación)</span><span><i style="border:2px dashed var(--muted)"></i>Sin aprobar (propuesta o en negociación)</span><span>✓ cumplida · ◐ parcial · ✕ no cumplida</span><span><i style="background:var(--key)"></i>Fecha comercial</span><span><i style="background:var(--hol)"></i>Feriado</span><span><i style="background:var(--own)"></i>Evento propio</span><span><i style="background:var(--ok)"></i>Cambio de PSV</span><span><b class="g-flag" style="display:inline-grid">!</b> falta promo por acuerdo</span></div></div>`;
+    <div class="legend"><span><i style="background:var(--hummus)"></i>Hummus · Kyros</span><span><i style="background:var(--salsas)"></i>Salsas Kansas</span><span><i style="background:var(--pan)"></i>Kansas Bakery</span><span><i style="background:var(--dd)"></i>DeliDips (todas las marcas)</span><span><i style="background:repeating-linear-gradient(135deg,var(--tbd) 0 4px,var(--tbd2) 4px 8px)"></i>❓ A confirmar (en negociación)</span><span><i style="border:2px dashed var(--muted)"></i>Sin aprobar (propuesta o en negociación)</span><span><b style="font-size:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:0 3px">MB</b> marca blanca que fabricamos</span><span>✓ cumplida · ◐ parcial · ✕ no cumplida</span><span><i style="background:var(--key)"></i>Fecha comercial</span><span><i style="background:var(--hol)"></i>Feriado</span><span><i style="background:var(--own)"></i>Evento propio</span><span><i style="background:var(--ok)"></i>Cambio de PSV</span><span><b class="g-flag" style="display:inline-grid">!</b> falta promo por acuerdo</span></div></div>`;
   v.querySelectorAll("[data-key]").forEach(el=>el.onclick=e=>{e.stopPropagation();openFecha(keyById(el.dataset.key))});
   v.querySelector("#addKey")?.addEventListener("click",()=>openFecha(null));
   v.querySelectorAll("[data-newpsvc]").forEach(b=>b.onclick=()=>openPsvCambio(null));
@@ -737,7 +743,7 @@ function renderCal(v,tb){
   v.querySelectorAll("[data-newday]").forEach(el=>el.ondblclick=()=>openPromo(null,el.dataset.newday));
 }
 const stIcon=p=>({ok:"✓",parcial:"◐",no:"✕"})[p.cumpl]||"";
-function barClass(p){return `bar c-${p.cat} ${PENDIENTE.has(p.estado)?"plan":""} ${p.estado==="cancel"?"cancel":""}`}
+function barClass(p){return `bar c-${p.cat} ${isMpPromo(p)?"mpb":""} ${PENDIENTE.has(p.estado)?"plan":""} ${p.estado==="cancel"?"cancel":""}`}
 function ganttHTML(list){
   const N=daysIn(S.y,S.m),cols=`150px repeat(${N},minmax(28px,1fr))`;
   const dayInfo=[];for(let d=1;d<=N;d++){const dt=new Date(S.y,S.m,d);const w=(dt.getDay()+6)%7;dayInfo.push({d,w,we:w>=5,today:iso(dt)===TODAY,iso:iso(dt)})}
@@ -760,7 +766,7 @@ function ganttHTML(list){
     html+=`<div class="g-row" style="grid-template-columns:${cols};grid-template-rows:repeat(${L},32px)">
       <div class="g-label" style="grid-row:1/-1" title="${h(c.name)}"><img src="${c.logo}" alt="${h(c.name)}">${(()=>{const miss=commitsOf(c.id).filter(x=>x.st!=="ok");return miss.length?`<span class="g-flag" title="${h(miss.map(x=>"Acuerdo: "+x.need+" promo(s) de "+catName(x.c.cat)+" "+FRECS[x.c.frecuencia][0]+" · cargadas "+x.done).join("\n"))}">!</span>`:""})()}</div>
       ${dayInfo.map((x,i)=>{const k=kOn(x.iso,c.id);return `<div class="g-cell ${x.we?"we":""} ${x.today?"today":""} ${k?"k-"+k.tipo:""}" style="grid-column:${i+2};grid-row:1/-1" data-newday="${x.iso}" title="${k?h(k.nombre)+" · ":""}Doble clic para crear promo el ${x.d}"></div>`}).join("")}
-      ${placed.map(({p,s,e,li})=>{const l=promoLabel(p);return `<button class="${barClass(p)}" style="grid-column:${s+1}/${e+2};grid-row:${li+1}" data-promo="${p.id}" title="${h(PCATS[p.cat].marca+" · "+l.m+" · "+l.prods+" · "+fdate(p.desde)+"–"+fdate(p.hasta))}"><span class="st">${stIcon(p)}</span>${h(PCATS[p.cat].marca)} · ${h(l.m)} <span style="opacity:.8">· ${h(l.prods)}</span></button>`}).join("")}
+      ${placed.map(({p,s,e,li})=>{const l=promoLabel(p);return `<button class="${barClass(p)}" style="grid-column:${s+1}/${e+2};grid-row:${li+1}" data-promo="${p.id}" title="${h(promoBrand(p)+" · "+l.m+" · "+l.prods+" · "+fdate(p.desde)+"–"+fdate(p.hasta))}"><span class="st">${stIcon(p)}</span>${h(promoBrand(p))} · ${h(l.m)} <span style="opacity:.8">· ${h(l.prods)}</span></button>`}).join("")}
     </div>`;
   }
   html+=`</div></div>`;
@@ -785,7 +791,7 @@ function monthHTML(list){
       html+=`<div class="cc-day ${x.out?"out":""} ${we?"we":""} ${!x.out&&kk[0]&&!kk[0].cadena?"k-"+kk[0].tipo:""}" style="grid-column:${i+1};grid-row:1/-1" ${x.out?"":`data-newday="${x.ds}" title="Doble clic para crear promo"`}></div>
         <div class="cc-top" style="grid-column:${i+1};grid-row:1"><span class="cc-n ${x.ds===TODAY?"today":""}">${x.d.getDate()}</span>${x.out?"":kk.map(k=>`<button class="klabel t-${k.tipo}" data-key="${h(k.id)}" title="${h(TIPOS_K[k.tipo]+(k.nota?" · "+k.nota:""))}">★ ${h(k.nombre)}${k.cadena?" · "+h(CAD[k.cadena]?.name||""):""}</button>`).join("")}</div>`});
     html+=placed.map(({p,s,e,li,cl,cr})=>{const l=promoLabel(p);const c=CAD[p.cadena];
-      return `<button class="${barClass(p)} cc-bar ${cl?"cl":""} ${cr?"cr":""}" style="grid-column:${s+1}/${e+2};grid-row:${li+2}" data-promo="${p.id}" title="${h((c?.name||"")+" · "+PCATS[p.cat].marca+" · "+l.m+" · "+l.prods+" · "+fdate(p.desde)+"–"+fdate(p.hasta))}"><img src="${c?.logo||""}" alt=""><span class="st">${stIcon(p)}</span>${h(PCATS[p.cat].marca)} · ${h(l.m)} <span style="opacity:.8">· ${h(l.prods)}</span></button>`}).join("");
+      return `<button class="${barClass(p)} cc-bar ${cl?"cl":""} ${cr?"cr":""}" style="grid-column:${s+1}/${e+2};grid-row:${li+2}" data-promo="${p.id}" title="${h((c?.name||"")+" · "+promoBrand(p)+" · "+l.m+" · "+l.prods+" · "+fdate(p.desde)+"–"+fdate(p.hasta))}"><img src="${c?.logo||""}" alt=""><span class="st">${stIcon(p)}</span>${h(promoBrand(p))} · ${h(l.m)} <span style="opacity:.8">· ${h(l.prods)}</span></button>`}).join("");
     html+=`</div>`;
   }
   return html+`</div></div>`;
@@ -808,12 +814,13 @@ function openPromo(p,day,prefill){
   const d=day||(ym()===TODAY.slice(0,7)?TODAY:ym()+"-01");
   p=p?JSON.parse(JSON.stringify(p)):prefill?prefill:{id:uid(),cadena:S.calCadena||"dia",cat:"hummus",productos:[],mecanica:"% de descuento",descuento:"",precio:"",desde:d,hasta:d,estado:"plan",notasCom:"",cumpl:"pend",obsMkt:""};
   const dlg=$("#dlg");
-  const prodPick=()=>{const ps=PROD().filter(x=>p.cat==="delidips"||p.cat==="aconfirmar"||x.cat===p.cat);const sur=surtidoOf(p.cadena);return (ps.length?ps.map(x=>`<label><input type="checkbox" value="${x.id}" ${p.productos?.includes(x.id)?"checked":""}>${h(x.nombre)}</label>`).join(""):`<span class="muted small">Sin productos cargados para esta categoría.</span>`)+`<div class="small muted" style="flex-basis:100%;margin-top:4px">${h(acuerdoNote(p.cadena,p.cat))}</div>`};
+  const prodPick=()=>{const ps=PROD().filter(x=>p.cat==="delidips"||p.cat==="aconfirmar"||x.cat===p.cat);const sur=surtidoOf(p.cadena);return (ps.length?ps.map(x=>`<label><input type="checkbox" value="${x.id}" ${p.productos?.includes(x.id)?"checked":""}>${h(p.tipoMarca==="mp"&&mpOf(p.cadena)?genericName(x)+" "+mpOf(p.cadena):x.nombre)}</label>`).join(""):`<span class="muted small">Sin productos cargados para esta categoría.</span>`)+`<div class="small muted" style="flex-basis:100%;margin-top:4px">${h(acuerdoNote(p.cadena,p.cat))}</div>`};
   const det=isNew?[]:detectedFor(p);
   dlg.innerHTML=`<form method="dialog" id="pf">
     <div class="dlg-h"><h3>${isNew?"Nueva promoción":"Editar promoción"}</h3><button class="iconbtn" value="x" formnovalidate aria-label="Cerrar">×</button></div>
     <div class="dlg-b"><div class="form">
       <label>Cadena<select name="cadena">${CADENAS.map(c=>`<option value="${c.id}" ${p.cadena===c.id?"selected":""}>${c.name}</option>`).join("")}</select></label>
+      <label class="full">¿De qué marca es la promo?<select name="tipoMarca"><option value="">Nuestras marcas (Kyros / Kansas)</option><option value="mp" ${p.tipoMarca==="mp"?"selected":""}>Marca blanca que fabricamos</option></select></label>
       <label>Categoría<select name="cat">${Object.entries(PCATS).map(([k,c])=>`<option value="${k}" ${p.cat===k?"selected":""}>${k==="delidips"?"DeliDips · todas las marcas / combos":k==="aconfirmar"?"❓ A confirmar · en negociación, se define después":c.name+" · "+c.marca}</option>`).join("")}</select></label>
       <fieldset class="full"><legend>Productos (sin marcar = toda la línea)</legend><div class="prodpick" id="pp">${prodPick()}</div></fieldset>
       <label>Mecánica<select name="mecanica">${MECANICAS.map(m=>`<option ${p.mecanica===m?"selected":""}>${m}</option>`).join("")}</select></label>
@@ -833,11 +840,13 @@ function openPromo(p,day,prefill){
   </form>`;
   const f=dlg.querySelector("#pf");
   f.cat.onchange=()=>{p.cat=f.cat.value;p.productos=[];dlg.querySelector("#pp").innerHTML=prodPick()};
-  f.cadena.onchange=()=>{p.cadena=f.cadena.value;p.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);dlg.querySelector("#pp").innerHTML=prodPick()};
+  const syncTipo=()=>{const mp=mpOf(p.cadena);const o=f.tipoMarca.options[1];o.textContent=mp?`Marca blanca: ${mp}`:"Marca blanca (esta cadena no tiene)";o.disabled=!mp;if(!mp&&f.tipoMarca.value==="mp")f.tipoMarca.value="";p.tipoMarca=f.tipoMarca.value};syncTipo();
+  f.cadena.onchange=()=>{p.cadena=f.cadena.value;syncTipo();p.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);dlg.querySelector("#pp").innerHTML=prodPick()};
+  f.tipoMarca.onchange=()=>{p.tipoMarca=f.tipoMarca.value;p.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);dlg.querySelector("#pp").innerHTML=prodPick()};
   f.onsubmit=async e=>{
     if(e.submitter?.value!=="ok")return;
     const fd=new FormData(f);
-    const o={...p};for(const k of ["cadena","cat","mecanica","descuento","precio","desde","hasta","estado","notasCom","cumpl","obsMkt"])o[k]=fd.get(k)||"";
+    const o={...p};for(const k of ["cadena","tipoMarca","cat","mecanica","descuento","precio","desde","hasta","estado","notasCom","cumpl","obsMkt"])o[k]=fd.get(k)||"";
     o.productos=[...dlg.querySelectorAll("#pp input:checked")].map(i=>i.value);
     if(o.hasta<o.desde)o.hasta=o.desde;
     o.descuento=o.descuento===""?"":+o.descuento;o.precio=o.precio===""?"":+o.precio;
@@ -888,7 +897,7 @@ function renderClip(v,tb){
     <div class="panel" style="margin-bottom:14px"><div class="panel-b"><h4>Planificado vs. visto en ${h(cad.name)}</h4>
       ${planned.length?planned.map(p=>{const l=promoLabel(p);const det=detectedFor(p);const started=p.desde<=TODAY;
         const ic=det.length?["ok","✓"]:started?["bad","!"]:["neutral","·"];
-        return `<div class="planitem"><span class="ic ${ic[0]}">${ic[1]}</span><div style="flex:1;min-width:0"><div><span class="catdot" style="background:${PCATS[p.cat].color}"></span><b>${h(PCATS[p.cat].marca)} · ${h(l.m)}</b></div>
+        return `<div class="planitem"><span class="ic ${ic[0]}">${ic[1]}</span><div style="flex:1;min-width:0"><div><span class="catdot" style="background:${PCATS[p.cat].color}"></span><b>${h(promoBrand(p))} · ${h(l.m)}</b></div>
         <div class="small muted">${h(l.prods)} · ${fdate(p.desde)}–${fdate(p.hasta)}</div>
         <div class="small">${det.length?`Vista en ${det.length} captura${det.length>1?"s":""}`:started?"No aparece en las capturas":"Todavía no empezó"} · <span class="tag ${CUMPL[p.cumpl||"pend"][1]}">${CUMPL[p.cumpl||"pend"][0]}</span></div>
         <button class="btn small" style="margin-top:4px" data-promo="${p.id}">Marcar cumplimiento</button></div></div>`}).join(""):`<p class="muted small">No hay promos planificadas para ${h(cad.name)} en ${MESES[S.m]}.</p>`}
@@ -967,7 +976,7 @@ function mpCompareHTML(cid){
   for(const c of S.clips){if(c.cadena!==cid||ymOf(c.fecha)!==ym())continue;for(const it of (c.items||[])){if(!hasPromo(it))continue;
     if(isMp(it,cid)){const pid=guessPid(it);if(!pid)continue;if(!row(pid).mpName)row(pid).mpName=it.producto;const k=promoTxt(it);const e=row(pid).mp.get(k);row(pid).mp.set(k,e?{...e,last:c.fecha>e.last?c.fecha:e.last}:{pct:promoPct(it),first:c.fecha,last:c.fecha})}
     else if(it.propio&&it.productoId){const k=promoTxt(it);const e=row(it.productoId).our.get(k);row(it.productoId).our.set(k,e?{...e,last:c.fecha>e.last?c.fecha:e.last}:{pct:promoPct(it),first:c.fecha,last:c.fecha})}}}
-  const cal=promosInMonth().filter(p=>p.cadena===cid&&p.estado!=="cancel"&&p.cat!=="aconfirmar");
+  const calAll=promosInMonth().filter(p=>p.cadena===cid&&p.estado!=="cancel"&&p.cat!=="aconfirmar");const cal=calAll.filter(p=>p.tipoMarca!=="mp"),calMp=calAll.filter(p=>p.tipoMarca==="mp");
   const cell=m=>m.size?[...m.entries()].map(([k,v])=>`<b>${h(k)}</b> <span class="small muted">${fdate(v.first)}${v.last!==v.first?"–"+fdate(v.last):""}</span>`).join("<br>"):`<span class="muted">—</span>`;
   const all=[...pm.values()];const mpPcts=all.flatMap(r=>[...r.mp.values()].map(v=>v.pct).filter(Boolean)),ourPcts=all.flatMap(r=>[...r.our.values()].map(v=>v.pct).filter(Boolean));
   const av=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length)+"%":"—";
@@ -977,7 +986,8 @@ function mpCompareHTML(cid){
   <div class="tbl-wrap"><table class="t"><thead><tr><th>${h(mp)}</th><th>Promo</th><th>Nuestra marca</th><th>Promo</th></tr></thead><tbody>
   ${[...pm.entries()].map(([pid,r])=>{const pp=prodById(pid);return `<tr><td>${pp?h(mpProdName(pp,mp,r.mpName)):"—"}</td><td>${cell(r.mp)}</td><td>${pp?h(pp.nombre):pid}</td><td>${cell(r.our)}</td></tr>`}).join("")}</tbody></table></div>`
   :`<p class="muted small" style="margin:0">No se vieron promociones de ${h(mp)} ni de nuestras marcas en las capturas de ${MESES[S.m]}.</p>`;
-  if(cal.length)html+=`<p class="small" style="margin:6px 0 0"><b>En el calendario</b> (nuestras): ${cal.map(p=>{const l=promoLabel(p);return `${h(PCATS[p.cat].marca)} ${h(l.m)} · ${h(l.prods)} (${fdate(p.desde)}–${fdate(p.hasta)})`}).join(" · ")}</p>`;
+  if(calMp.length)html+=`<p class="small" style="margin:6px 0 0"><b>Promos de ${h(mp)} en el calendario:</b> ${calMp.map(p=>{const l=promoLabel(p);return `${h(l.m)} · ${h(l.prods)} (${fdate(p.desde)}–${fdate(p.hasta)})`}).join(" · ")}</p>`;
+  if(cal.length)html+=`<p class="small" style="margin:6px 0 0"><b>En el calendario</b> (nuestras): ${cal.map(p=>{const l=promoLabel(p);return `${h(promoBrand(p))} ${h(l.m)} · ${h(l.prods)} (${fdate(p.desde)}–${fdate(p.hasta)})`}).join(" · ")}</p>`;
   return html;
 }
 
@@ -1238,7 +1248,7 @@ function periodOf(frec,y,m){const n=FRECS[frec]?.[1]||1;const s=Math.floor(m/n)*
   return {a:`${y}-${pad(s+1)}-01`,b:`${y}-${pad(e+1)}-${pad(daysIn(y,e))}`,label:n===1?MESES[m]:`${MESES[s].slice(0,3)}–${MESES[e].slice(0,3)}`}}
 function commitsOf(cid){const a=acuerdoOf(cid);if(!a?.compromisos?.length)return [];
   return a.compromisos.filter(c=>c.cat&&FRECS[c.frecuencia]).map(c=>{const per=periodOf(c.frecuencia,S.y,S.m);
-    const ps=S.promos.filter(p=>p.cadena===cid&&p.estado!=="cancel"&&(c.cat==="todas"||p.cat===c.cat||p.cat==="delidips")&&p.desde<=per.b&&p.hasta>=per.a);
+    const ps=S.promos.filter(p=>p.cadena===cid&&p.estado!=="cancel"&&p.tipoMarca!=="mp"&&(c.cat==="todas"||p.cat===c.cat||p.cat==="delidips")&&p.desde<=per.b&&p.hasta>=per.a);
     const need=Math.max(1,+c.cantidad||1),done=ps.length;const st=done>=need?"ok":per.b<TODAY?"bad":"warn";
     return {c,per,ps,need,done,conf:ps.filter(p=>p.estado==="conf").length,st}})}
 function acuerdoNote(cid,cat){const a=acuerdoOf(cid);if(!a)return `Sin acuerdo cargado para ${CAD[cid]?.name||""}.`;
@@ -1480,7 +1490,7 @@ function renderAcuerdos(v,tb){
     <div><h4 class="sec">Nuestras marcas en ${h(r.c.name)}</h4>
       ${ourBrandsHTML(r)}
       ${(()=>{if(!r.sur)return"";const bad=promosInMonth().filter(p=>p.cadena===r.c.id&&p.estado!=="cancel"&&p.productos?.some(id=>!r.sur.includes(id)));
-        return bad.length?`<p class="small" style="color:var(--bad)">Promos del mes con productos fuera del surtido: ${bad.map(p=>`<button class="btn small" data-promo="${p.id}">${h(PCATS[p.cat].marca+" "+promoLabel(p).m+" · "+promoLabel(p).prods)}</button>`).join(" ")}</p>`:""})()}
+        return bad.length?`<p class="small" style="color:var(--bad)">Promos del mes con productos fuera del surtido: ${bad.map(p=>`<button class="btn small" data-promo="${p.id}">${h(promoBrand(p)+" "+promoLabel(p).m+" · "+promoLabel(p).prods)}</button>`).join(" ")}</p>`:""})()}
       <h4 class="sec" style="margin-top:20px">Marca blanca que le fabricamos${mpOf(r.c.id)?": "+h(mpOf(r.c.id)):""}</h4>
       ${mpSectionHTML(r.c.id)}
       <h4 class="sec" style="margin-top:18px">Contraprestaciones y notas</h4>
@@ -1553,7 +1563,7 @@ cal:{t:"Cómo leer el Calendario de promociones",b:`<p>Comercial carga las promo
 <li><b>Descuento promedio:</b> promedio simple de los % de descuento cargados (no incluye 2x1 o precios especiales sin %).</li>
 <li><b>Cumplidas:</b> de las promos que ya terminaron, qué porcentaje marketing marcó como cumplidas.</li>
 <li><b>Colores de barra:</b> naranja Kyros, rojo Salsas Kansas, dorado Kansas Bakery. Barra punteada = sin aprobar (propuesta o en negociación). Tachada = rechazada. ✓ cumplida, ◐ parcial, ✕ no cumplida.</li>
-<li><b>Fechas clave:</b> días pintados de violeta (fecha comercial), gris azulado (feriado) o verde agua (evento propio).</li>
+<li><b>Marca blanca (MB):</b> también se pueden cargar las promos de las marcas blancas que fabricamos (ej. hummus marca Dia 25% OFF). Al cargar la promo, en “¿De qué marca es la promo?” se elige “Marca blanca”. Se ven rayadas y con la etiqueta MB, no cuentan en los totales de arriba ni en los compromisos, y se pueden ocultar con el filtro “Marca blanca”.</li><li><b>Fechas clave:</b> días pintados de violeta (fecha comercial), gris azulado (feriado) o verde agua (evento propio).</li>
 <li><b>❗ junto al logo:</b> la cadena tiene un compromiso del acuerdo comercial que todavía no tiene promo cargada.</li>
 <li><b>Vistas:</b> Calendario (mes clásico), Por cadena (una fila por cadena) o Lista (tabla con estado y si la promo se vio en el clipping).</li></ul>`},
 clip:{t:"Cómo leer el Clipping",b:`<p>Es el relevamiento diario de <b>Kyros y Kansas</b> en la web o app de cada cadena: precios, promos y si se cumple lo planificado. Se elige la cadena, se toca “⚡ Cargar relevamiento” y se completan solo los precios y promos que se ven. Se puede adjuntar la captura como respaldo.</p>
