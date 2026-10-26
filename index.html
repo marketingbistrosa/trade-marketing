@@ -338,6 +338,7 @@ details.others summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .cg-t .cg-name{font-weight:500;min-width:190px}
 .cg-in{width:110px;padding:6px 8px;font-size:15px}
 .cg-mec{width:130px}
+.cg-in.autoed::placeholder{color:var(--ok);font-weight:600;opacity:1}
 .cg-t tr[data-row]:nth-child(even) td{background:var(--surface-2)}
 .cg-t tr[data-row]:has(input[data-f="lista"]:not(:placeholder-shown)) td.cg-name{color:var(--ok)}
 .cg-bh td{background:var(--surface)!important;font-family:"Barlow Condensed",sans-serif;font-size:18px;font-weight:600;padding-top:12px}
@@ -897,7 +898,7 @@ function renderClip(v,tb){
     <div class="links"><span class="small muted" style="font-weight:600"><span class="tip" title="Opcional. Son accesos directos a las secciones de la web de la cadena donde están nuestros productos, para abrirlas rápido y sacar las capturas. No cargan datos solos: la información se sigue tomando de las imágenes que subís.">Páginas para relevar (opcional):</span></span>${links.map(l=>`<a href="${h(l.url)}" target="_blank" rel="noopener">${h(l.label||l.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,40))} ↗</a>`).join("")||`<span class="small muted">ninguno cargado</span>`}<button class="btn small ghost" id="edLinks">${links.length?"Editar accesos":"+ Agregar acceso"}</button></div>
     <div class="cg-cta"><div><b>Relevamiento de ${h(cad.name)}</b><span>Cargá a mano los precios y promos de Kyros y Kansas que ves en la web o la góndola. Solo completás lo que ves.</span></div>
       <label class="small muted">Fecha <input type="date" id="capDate" value="${defDate}"></label>
-      <button class="btn primary" id="cgOpen">⚡ Cargar relevamiento</button></div>
+      <button class="btn" id="xlOpen">📊 Importar Excel</button><button class="btn primary" id="cgOpen">⚡ Cargar relevamiento</button></div>
     <div style="margin-top:14px" id="caps">${shown.length?shown.map(captureHTML).join(""):`<div class="empty"><strong>Sin capturas ${S.clipDay?"este día":"este mes"}</strong>Tocá “⚡ Cargar relevamiento” para cargar los precios y promos de ${h(cad.name)}.</div>`}</div>
   </div>
   <aside class="side">
@@ -924,6 +925,7 @@ function renderClip(v,tb){
   v.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{S.clipDay=b.dataset.day;render()});
   v.querySelectorAll("[data-promo]").forEach(b=>b.onclick=()=>openPromo(S.promos.find(p=>p.id===b.dataset.promo)));
   v.querySelector("#cgOpen").onclick=()=>openCarga(cad.id,v.querySelector("#capDate").value);
+  v.querySelector("#xlOpen").onclick=()=>openImportXL();
   bindCaptures(v);
 }
 function clipRelevant(c){const it=c.items||[];if(S.analyzing.has(c.id)||c.estado==="analizando"||c.estado==="error"||!it.length)return true;return it.some(i=>i.propio)}
@@ -1684,9 +1686,11 @@ function openCarga(cid,fecha,clip){
     dlg.querySelectorAll(".cg-copy").forEach(b=>b.onclick=()=>{const inp=b.closest("tr").querySelector('[data-f="lista"]');inp.value=b.dataset.copy;count();inp.closest("tr").querySelector('[data-f="mec"]').focus()});
     bindInputs(dlg.querySelector("#cgBody"));count();
   };
-  const bindInputs=root=>root.querySelectorAll("input,select").forEach(inp=>{inp.addEventListener("input",count);
+  const updAuto=tr=>{const g=f=>tr.querySelector(`[data-f="${f}"]`);const fin=g("final");if(!fin)return;const r=calcRow(g("lista").value,g("mec").value,"");
+    const on=r.descuentoPct!=null&&r.precioFinal!=null&&r.precioFinal!==r.precioLista;fin.placeholder=on?fmt$(r.precioFinal):"auto";fin.classList.toggle("autoed",on);fin.title=on?"Calculado automáticamente: "+r.mecanica:""};
+  const bindInputs=root=>{root.querySelectorAll("tr").forEach(tr=>tr.querySelector('[data-f="final"]')&&updAuto(tr));root.querySelectorAll("input,select").forEach(inp=>{inp.addEventListener("input",()=>{count();const tr=inp.closest("tr");if(tr)updAuto(tr)});
     inp.addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault();const tr=inp.closest("tr");const f=inp.dataset.f;let nx=tr.nextElementSibling;
-      while(nx&&!nx.querySelector(`[data-f="${f}"]`))nx=nx.nextElementSibling;const t=nx?.querySelector(`[data-f="${f}"]`);if(t){t.focus();t.select?.()}})});
+      while(nx&&!nx.querySelector(`[data-f="${f}"]`))nx=nx.nextElementSibling;const t=nx?.querySelector(`[data-f="${f}"]`);if(t){t.focus();t.select?.()}})});};
   const collect=()=>{const items=[];const mp=mpOf(cid);
     dlg.querySelectorAll("tr[data-row]").forEach(tr=>{const g=f=>tr.querySelector(`[data-f="${f}"]`).value;if(!g("lista")&&!g("final")&&!g("mec"))return;
       const p=prodById(tr.dataset.pid);const r=calcRow(g("lista"),g("mec"),g("final"));const own=tr.dataset.row.startsWith("o_");
@@ -1724,6 +1728,72 @@ function openCarga(cid,fecha,clip){
   setTimeout(()=>dlg.querySelector('#cgBody [data-f="lista"]')?.focus(),50);
 }
 
+/* ---------- IMPORTAR EXCEL ---------- */
+let XLSXP=null;
+function loadXLSX(){if(window.XLSX)return Promise.resolve(window.XLSX);if(XLSXP)return XLSXP;
+  XLSXP=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";sc.onload=()=>res(window.XLSX);sc.onerror=()=>{XLSXP=null;rej(new Error("No se pudo cargar el lector de Excel"))};document.head.append(sc)});return XLSXP}
+const XL_COLS=["Fecha","Cadena","Tipo","Marca","Producto","Categoría","Precio de lista","Promo","Precio con promo"];
+function xlDate(v){if(v instanceof Date&&!isNaN(v))return iso(new Date(v.getFullYear(),v.getMonth(),v.getDate()));
+  if(typeof v==="number"){const d=new Date(Math.round((v-25569)*864e5));return iso(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()))}
+  const t=String(v||"").trim();let m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);if(m){const y=m[3].length===2?"20"+m[3]:m[3];return `${y}-${pad(+m[2])}-${pad(+m[1])}`}
+  m=t.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[1]}-${m[2]}-${m[3]}`:""}
+function xlCadena(v){const n=normTxt(v);if(!n)return null;const c=CADENAS.find(c=>normTxt(c.name)===n||c.id===n||normTxt(c.name).replace(/ /g,"")===n.replace(/ /g,""));return c?c.id:null}
+function xlTipo(v){const n=normTxt(v);if(/blanca|propia de la cadena|mb/.test(n))return "mp";if(/compet/.test(n))return "comp";if(/nuestr|propi|kyros|kansas|delidips/.test(n)||!n)return "own";return "comp"}
+function xlCat(v,prod){const n=normTxt(v+" "+prod);if(/hummus|babaganush/.test(n))return "hummus";if(/pan/.test(normTxt(v))||/^pan /.test(normTxt(prod)))return "panificados";if(/salsa|ketchup|aderezo|mayonesa|aioli|mostaza|barbacoa|chimichurri|vinagreta|cheddar|caesar/.test(n))return "salsas";return "otra"}
+function xlOwnPid(prod,cat){const n=normTxt(prod);const ex=PROD().find(p=>normTxt(p.nombre)===n);if(ex)return ex.id;return guessPid({producto:prod,categoria:cat})}
+function parseXL(rows){
+  const out=[],warn=[];
+  rows.forEach((r,i)=>{const line=i+2;const g=k=>{const key=Object.keys(r).find(x=>normTxt(x)===normTxt(k));return key!=null?r[key]:""};
+    const prod=String(g("Producto")||"").trim(),lista=g("Precio de lista"),fin=g("Precio con promo"),mec=String(g("Promo")||"").trim();
+    if(!prod&&!lista&&!fin)return;
+    const fecha=xlDate(g("Fecha"));const cid=xlCadena(g("Cadena"));
+    if(!fecha){warn.push(`Fila ${line}: falta la fecha o no se entiende ("${g("Fecha")}")`);return}
+    if(!cid){warn.push(`Fila ${line}: cadena desconocida ("${g("Cadena")}")`);return}
+    if(num(lista)==null&&num(fin)==null){warn.push(`Fila ${line}: ${prod||"producto"} sin precio`);return}
+    const tipo=xlTipo(g("Tipo"));const cat=xlCat(g("Categoría"),prod);const marca=String(g("Marca")||"").trim();
+    const r2=calcRow(lista,mec,fin);let item;
+    if(tipo==="own"){const pid=xlOwnPid(prod,cat);if(!pid){warn.push(`Fila ${line}: no encontré "${prod}" en nuestro catálogo (se cargó como competencia)`)}
+      const p=pid&&prodById(pid);item=p?{producto:p.nombre,marca:CATS[p.cat].marca,categoria:p.cat,propio:true,productoId:pid,...r2}:{producto:prod,marca:marca||"Sin marca visible",categoria:cat,propio:false,productoId:null,...r2}}
+    else if(tipo==="mp"){const mp=mpOf(cid)||marca||"Marca blanca";const pid=guessPid({producto:prod,categoria:cat});item={producto:prod,marca:mp,categoria:cat,propio:false,mp:true,productoId:pid,...r2}}
+    else item={producto:prod,marca:marca||"Sin marca visible",categoria:cat,propio:false,productoId:null,...r2};
+    out.push({fecha,cid,item:{presentacion:"",vigencia:"",...item}})});
+  return {out,warn}}
+async function openImportXL(){
+  const dlg=$("#dlg");
+  dlg.innerHTML=`<form method="dialog" style="display:contents"><div class="dlg-h"><h3>Importar relevamiento desde Excel</h3><button class="iconbtn" value="x" formnovalidate aria-label="Cerrar">×</button></div>
+  <div class="dlg-b"><p style="margin-top:0">Subí el Excel con los precios y promos del día. Puede tener varias cadenas y varias fechas: se arma un relevamiento por cadena y por día.</p>
+    <p class="small muted">Columnas: ${XL_COLS.map(c=>`<b>${c}</b>`).join(" · ")}. “Tipo” puede ser <b>Nuestra</b>, <b>Marca blanca</b> o <b>Competencia</b>.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" id="xlPick">📊 Elegir archivo Excel</button><button type="button" class="btn" id="xlTpl">Descargar plantilla vacía</button><input type="file" id="xlFile" accept=".xlsx,.xls,.csv" hidden></div>
+    <div id="xlRes" style="margin-top:14px"></div></div>
+  <div class="dlg-f"><div class="spacer"></div><button class="btn" value="x" formnovalidate>Cancelar</button><button type="button" class="btn primary" id="xlGo" disabled>Importar</button></div></form>`;
+  dlg.style.maxWidth="min(820px,calc(100vw - 24px))";dlg.addEventListener("close",()=>dlg.style.maxWidth="",{once:true});
+  let parsed=null;const res=dlg.querySelector("#xlRes"),go=dlg.querySelector("#xlGo");
+  dlg.querySelector("#xlPick").onclick=()=>dlg.querySelector("#xlFile").click();
+  dlg.querySelector("#xlTpl").onclick=async()=>{try{const X=await loadXLSX();const wb=X.utils.book_new();
+    const ws=X.utils.aoa_to_sheet([XL_COLS,[TODAY.split("-").reverse().join("/"),"Coto","Nuestra","Kyros","Hummus Kyros Clásico","Hummus",4599,"25% OFF",""]]);ws["!cols"]=XL_COLS.map(c=>({wch:Math.max(12,c.length+4)}));X.utils.book_append_sheet(wb,ws,"Relevamiento");
+    const ref=[["Productos nuestros (escribir el nombre tal cual)","Categoría"],...PROD().map(p=>[p.nombre,MB_CATS[p.cat]||p.cat]),[],["Cadenas"],...CADENAS.map(c=>[c.name]),[],["Tipo"],["Nuestra"],["Marca blanca"],["Competencia"]];
+    const ws2=X.utils.aoa_to_sheet(ref);ws2["!cols"]=[{wch:44},{wch:14}];X.utils.book_append_sheet(wb,ws2,"Referencias");X.writeFile(wb,"plantilla-relevamiento.xlsx")}catch(e){toast(e.message)}};
+  dlg.querySelector("#xlFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;res.innerHTML=`<span class="spinner"></span> Leyendo…`;go.disabled=true;
+    try{const X=await loadXLSX();const wb=X.read(await f.arrayBuffer(),{cellDates:true});const ws=wb.Sheets[wb.SheetNames.find(n=>/relev/i.test(n))||wb.SheetNames[0]];
+      const rows=X.utils.sheet_to_json(ws,{defval:"",raw:true});parsed=parseXL(rows);
+      const groups=new Map();for(const r of parsed.out){const k=r.cid+"|"+r.fecha;const g=groups.get(k)||{cid:r.cid,fecha:r.fecha,own:0,mp:0,comp:0};g[r.item.propio?"own":r.item.mp?"mp":"comp"]++;groups.set(k,g)}
+      parsed.groups=groups;
+      res.innerHTML=parsed.out.length?`<p style="margin:0 0 6px"><b>${parsed.out.length}</b> productos en <b>${groups.size}</b> relevamiento${groups.size===1?"":"s"}:</p>
+        <div class="tbl-wrap"><table class="t"><thead><tr><th>Cadena</th><th>Fecha</th><th class="num">Kyros y Kansas</th><th class="num">Marca blanca</th><th class="num">Competencia</th></tr></thead><tbody>
+        ${[...groups.values()].sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>`<tr><td><img class="minilogo" src="${CAD[g.cid]?.logo}" alt=""> ${h(CAD[g.cid]?.name)}</td><td>${fdate(g.fecha)}</td><td class="num">${g.own}</td><td class="num">${g.mp}</td><td class="num">${g.comp}</td></tr>`).join("")}</tbody></table></div>
+        <p class="small muted">Si ya habías importado un Excel para la misma cadena y día, se reemplaza (no se duplica).</p>`:`<p style="color:var(--bad)">No encontré filas con datos. Revisá que la primera fila tenga los títulos de las columnas.</p>`;
+      if(parsed.warn.length)res.innerHTML+=`<details open style="margin-top:8px"><summary class="small" style="color:var(--warn);cursor:pointer">⚠ ${parsed.warn.length} aviso${parsed.warn.length>1?"s":""}</summary><ul class="small" style="margin:6px 0 0;padding-left:18px">${parsed.warn.slice(0,40).map(w=>`<li>${h(w)}</li>`).join("")}</ul></details>`;
+      go.disabled=!parsed.out.length}catch(err){res.innerHTML=`<p style="color:var(--bad)">No se pudo leer el archivo: ${h(err.message||err)}</p>`}};
+  go.onclick=async()=>{if(!parsed?.out.length)return;go.disabled=true;go.textContent="Importando…";
+    try{for(const g of parsed.groups.values()){
+        for(const old of S.clips.filter(c=>c.origen==="excel"&&c.cadena===g.cid&&c.fecha===g.fecha))await Store.del("clips",old.id);
+        const items=parsed.out.filter(r=>r.cid===g.cid&&r.fecha===g.fecha).map(r=>r.item);
+        await Store.put("clips",uid(),{cadena:g.cid,fecha:g.fecha,items,img:null,estado:"listo",error:"",resumen:"",manual:true,origen:"excel",by:P.me||"",createdAt:Date.now(),updAt:Date.now()})}
+      dlg.close();toast(`Importado: ${parsed.out.length} productos en ${parsed.groups.size} relevamiento${parsed.groups.size===1?"":"s"}`)}
+    catch(e){go.disabled=false;go.textContent="Importar";toast("No se pudo importar")}};
+  dlg.showModal();
+}
+
 /* ---------- COMPETENCIA ---------- */
 /* agrupa variantes de una misma marca (TAU/Tau, Hellmann's/Hellmanns, Kühne/Khüne…) */
 function brandKey(m){const k=normTxt(m).replace(/[^a-z0-9]/g,"");return !k||(/^(sinmarca|novisible|desconocida)/.test(k)||/^(nd|na|sm)$/.test(k))?"_sm":k}
@@ -1740,10 +1810,11 @@ function brandCanon(items){const cnt=new Map(),names=new Map();
 function renderComp(v,tb){
   tb.innerHTML=`<select id="cCad" aria-label="Cadena"><option value="">Todas las cadenas</option>${CADENAS.map(c=>`<option value="${c.id}" ${S.compCadena===c.id?"selected":""}>${c.name}</option>`).join("")}</select>
   <select id="cCat" aria-label="Categoría"><option value="">Todas las categorías</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${S.compCat===k?"selected":""}>${c.name}</option>`).join("")}</select>
-  <button class="btn" id="addCompImg">⚡ Carga rápida</button><button class="btn primary" id="addComp">+ Cargar promo de competencia</button>`;
+  <button class="btn" id="addCompXl">📊 Importar Excel</button><button class="btn" id="addCompImg">⚡ Carga rápida</button><button class="btn primary" id="addComp">+ Cargar promo de competencia</button>`;
   tb.querySelector("#cCad").onchange=e=>{S.compCadena=e.target.value;render()};
   tb.querySelector("#cCat").onchange=e=>{S.compCat=e.target.value;render()};
   tb.querySelector("#addComp").onclick=()=>openComp();
+  tb.querySelector("#addCompXl").onclick=()=>openImportXL();
   tb.querySelector("#addCompImg").onclick=()=>openCarga(S.compCadena||S.clipCadena);
   const items=compItems().filter(i=>(!S.compCadena||i.cadena===S.compCadena)&&(!S.compCat||i.categoria===S.compCat));
   // summary by brand
