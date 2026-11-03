@@ -362,6 +362,7 @@ details.cmp-cad>summary>b{font-family:"Barlow Condensed",sans-serif;font-size:20
 details.cmp-cad[open]>summary{border-bottom:1px solid var(--line);background:var(--surface-2)}
 .cmp-body{padding:12px 16px 16px}
 .cmp-t td{padding:5px 8px}.cmp-bh td{background:var(--surface-2);font-weight:600}
+tr.psvrow-bad td{background:var(--bad-bg)}tr.psvrow-warn td{background:var(--warn-bg)}tr.psvrow-above td{background:var(--info-bg)}
 .guide{background:var(--info-bg);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
 .guide summary{cursor:pointer;padding:10px 16px;font-weight:600;color:var(--info)}
 .guide-b{padding:0 16px 12px;max-width:95ch;font-size:14px}
@@ -477,7 +478,7 @@ const CUMPL={pend:["Pendiente","neutral"],ok:["Cumplida","ok"],parcial:["Parcial
 const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const WD=["Lu","Ma","Mi","Ju","Vi","Sá","Do"];
 const fmt$=n=>n==null||n===""||isNaN(n)?"—":new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
-const fmtPct=n=>(n>0?"+":"")+n.toFixed(1).replace(".",",")+"%";
+const fmtPct=n=>{if(Math.abs(n)<0.05)n=0;return (n>0?"+":"")+n.toFixed(1).replace(".",",")+"%"};
 const h=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const $=s=>document.querySelector(s);
 const pad=n=>String(n).padStart(2,"0");
@@ -1169,69 +1170,49 @@ function editItems(c){
 
 /* ---------- PSV ---------- */
 function renderPSV(v,tb){
-  const PCADS=S.psvCad&&CAD[S.psvCad]?[CAD[S.psvCad]]:CADENAS;
-  tb.innerHTML=`<select id="psvCad" aria-label="Cadena"><option value="">Todas las cadenas</option>${CADENAS.map(c=>`<option value="${c.id}" ${S.psvCad===c.id?"selected":""}>${h(c.name)}</option>`).join("")}</select><label class="small muted">Comparar <div class="seg" style="vertical-align:middle">${[["lista","Precio de lista"],["final","Precio con promo"]].map(([k,n])=>`<button data-mode="${k}" aria-pressed="${S.psvMode===k}">${n}</button>`).join("")}</div></label>
-  <label class="small muted">Tolerancia ± <input type="number" id="tol" value="${TOL()}" min="0" max="50" step="1" style="width:64px">%</label>
+  S.psvMode="lista";
+  tb.innerHTML=`<label class="small muted">En objetivo si está dentro de ± <input type="number" id="tol" value="${TOL()}" min="0" max="50" step="1" style="width:56px">%</label>
   <button class="btn" id="addPrice">+ Cargar precio a mano</button><button class="btn" id="editPsv">Editar precios sugeridos</button><button class="btn primary" data-newpsvc>+ Programar cambio de PSV</button>`;
-  tb.querySelector("#psvCad").onchange=e=>{S.psvCad=e.target.value;render()};
-  tb.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{S.psvMode=b.dataset.mode;render()});
   tb.querySelector("#tol").onchange=e=>savePsvCfg({tolerancia:Math.max(0,+e.target.value||0)});
   tb.querySelector("#addPrice").onclick=()=>openPrice();
   tb.querySelector("#editPsv").onclick=()=>openPsvEdit();
-  const end=ym()+"-"+pad(daysIn(S.y,S.m));const lim=end<TODAY?end:TODAY;
-  const t=TOL();
-  // scorecard per cadena
-  const score=PCADS.map(c=>{const r={c,n:0,ok:0,warn:0,bad:0,above:0,devs:[]};
-    for(const p of PROD()){if(!p.psv)continue;const o=latestPrice(c.id,p.id,lim);const pr=priceFor(o);if(pr==null)continue;const ps=psvAt(p.id,c.id,o.fecha);const d=(pr-ps)/ps*100;r.n++;r[clsOf(d)]++;r.devs.push(d)}
-    r.avg=r.devs.length?r.devs.reduce((a,b)=>a+b,0)/r.devs.length:null;return r});
-  let html=psvChangesHTML()+`<div class="panel" style="margin-bottom:16px"><div class="panel-h"><h3>Cumplimiento del precio objetivo por cadena</h3><span class="small muted">El PSV es el objetivo. En objetivo = dentro de ±${t}% · último precio ${S.psvMode==="lista"?"de lista":"con promo"} hasta el ${fdate(lim)}</span></div>
-  <div class="tbl-wrap"><table class="t"><thead><tr><th>Cadena</th><th class="num"><span class="tip" title="Cantidad de productos nuestros con al menos un precio relevado en esta cadena (clipping o carga manual) hasta la fecha.">Productos relevados</span></th><th class="num"><span class="tip" title="Porcentaje de los productos relevados cuyo precio está dentro de la tolerancia (±${t}%) respecto del PSV. Entre paréntesis, cuántos productos son.">En objetivo</span></th><th><span class="tip" title="Proporción de productos según su desvío: rojo muy por debajo (más de ${t*2}% abajo), amarillo por debajo, verde en objetivo, azul por encima.">Distribución</span></th><th class="num"><span class="tip" title="Cantidad de productos con precio más de ${t}% por debajo del PSV.">Por debajo</span></th><th class="num"><span class="tip" title="Cantidad de productos con precio más de ${t}% por encima del PSV.">Por encima</span></th><th class="num"><span class="tip" title="Promedio de las diferencias de cada producto contra su PSV. Negativo: en promedio la cadena vende más barato que el precio objetivo. Positivo: más caro.">Desvío promedio</span></th></tr></thead><tbody>
-  ${score.map(r=>`<tr><td><img class="minilogo" src="${r.c.logo}" alt=""> ${h(r.c.name)}</td>
-    <td class="num">${r.n?`<span class="tip" title="En ${h(r.c.name)} hay precio relevado para ${r.n} producto${r.n===1?"":"s"} nuestro${r.n===1?"":"s"}.">${r.n}</span>`:"—"}</td>
-    <td class="num">${r.n?`<span class="tip" title="${r.ok} de ${r.n} productos (${Math.round(r.ok/r.n*100)}%) tienen en ${h(r.c.name)} un precio dentro de ±${t}% del PSV."><b>${Math.round(r.ok/r.n*100)}%</b> <span class="muted small">(${r.ok})</span></span>`:"—"}</td>
-    <td>${r.n?`<div class="stack" title="${r.bad} muy por debajo · ${r.warn} por debajo · ${r.ok} en objetivo · ${r.above} por encima"><i style="width:${r.bad/r.n*100}%;background:var(--bad)"></i><i style="width:${r.warn/r.n*100}%;background:var(--warn)"></i><i style="width:${r.ok/r.n*100}%;background:var(--ok)"></i><i style="width:${r.above/r.n*100}%;background:var(--info)"></i></div>`:`<span class="muted small">Sin precios relevados</span>`}</td>
-    <td class="num">${r.bad+r.warn?`<span class="tip" title="${r.bad+r.warn} producto${r.bad+r.warn===1?"":"s"} con precio más de ${t}% por debajo del PSV en ${h(r.c.name)}${r.bad?` (${r.bad} más de ${t*2}% abajo)`:""}.">${r.bad+r.warn}</span>`:"—"}</td><td class="num">${r.above?`<span class="tip" title="${r.above} producto${r.above===1?"":"s"} con precio más de ${t}% por encima del PSV en ${h(r.c.name)}.">${r.above}</span>`:"—"}</td>
-    <td class="num">${r.avg!=null?`<span class="d ${clsOf(r.avg)} tip" title="En promedio, ${h(r.c.name)} vende nuestros productos ${fmtPct(Math.abs(r.avg)).replace("+","")} ${r.avg<0?"por debajo":"por encima"} del precio objetivo (PSV).">${fmtPct(r.avg)}</span>`:"—"}</td></tr>`).join("")}
-  </tbody></table></div></div>`;
-  const al=computeAlerts();const open=al.filter(a=>!a.st);
-  const groups=PCADS.map(c=>({c,items:al.filter(a=>a.c.id===c.id)})).filter(g=>g.items.length);
-  html+=`<div class="panel" style="margin-bottom:16px"><div class="panel-h"><h3>Alertas para comercial</h3><span class="small muted">Precios fuera del objetivo por más de ±${t}%, agrupados por cadena</span><div class="spacer"></div>${open.length?`<button class="btn small" id="copyAll">Copiar resumen de todas las cadenas</button>`:""}</div>`;
-  html+=groups.length?groups.map(g=>{const op=g.items.filter(a=>!a.st);const dn=g.items.filter(a=>a.dev<0).length;const up=g.items.length-dn;const av=g.items.length-op.length;
-    return `<div class="agrp"><div class="agrp-h"><img class="minilogo" src="${g.c.logo}" alt=""><b>${h(g.c.name)}</b><span class="small muted">${[dn?dn+" por debajo":"",up?up+" por encima":"",av?av+" ya avisada"+(av>1?"s":""):""].filter(Boolean).join(" · ")}</span><div class="spacer"></div>${op.length?`<button class="btn small" data-copycad="${g.c.id}">Copiar mensaje de ${h(g.c.name)}</button><button class="btn small primary" data-avisarcad="${g.c.id}">${op.length>1?"Marcar todas avisadas":"Marcar avisada"}</button>`:`<span class="tag info">Todo avisado</span>`}</div>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>Producto</th><th class="num">Precio relevado</th><th class="num">Objetivo (PSV)</th><th class="num">Desvío</th><th>Relevado</th><th>Estado</th><th></th></tr></thead><tbody>
-    ${g.items.slice().sort((a,b)=>a.dev-b.dev).map(a=>{const c=clsOf(a.dev);return `<tr class="${a.st?"inact":""}"><td><b>${h(a.p.nombre)}</b>${a.o.mecanica?`<div class="small muted">${h(a.o.mecanica)}</div>`:""}</td><td class="num">${fmt$(a.pr)}</td><td class="num muted">${fmt$(a.ps)}</td><td class="num"><span class="d ${c}" style="font-size:15px">${fmtPct(a.dev)}</span></td><td class="small muted">${fdate(a.o.fecha)} · ${a.o.fuente==="clip"?"clipping":"manual"}</td>
-      <td>${a.st?`<span class="tag ${a.st.estado==="resuelto"?"ok":"info"}">${a.st.estado==="resuelto"?"Resuelto":"Avisado"}</span> <span class="small muted">${a.st.at?new Date(a.st.at).toLocaleDateString("es-AR"):""}</span>`:`<span class="tag ${c==="above"?"info":c}">${CLS_LABEL[c]}</span>`}</td>
-      <td style="white-space:nowrap;text-align:right">${a.st?`<button class="btn small ghost" data-reopen="${a.key}">Reabrir</button>`:`<button class="btn small ghost" data-copy="${a.key}">Copiar</button><button class="btn small" data-avisar="${a.key}">Avisado</button>`}</td></tr>`}).join("")}</tbody></table></div></div>`}).join(""):`<div class="panel-b"><div class="empty" style="padding:12px"><strong>Todo en objetivo</strong>Ningún precio relevado se aleja más de ±${t}% del PSV.</div></div>`;
+  if(!S.psvOpen)S.psvOpen=new Set();
+  const t=TOL();const end=ym()+"-"+pad(daysIn(S.y,S.m));const lim=end<TODAY?end:TODAY;const al=computeAlerts();
+  const nCh=S.psvCambios.length,nProg=S.psvCambios.filter(x=>x.desde>TODAY).length;
+  let html=`<p class="muted" style="margin:0 0 12px">Precio de lista (sin promo) de Kyros y Kansas en cada cadena, comparado con el precio sugerido (PSV). Último dato relevado hasta el ${fdate(lim)}. Tocá una cadena para ver el detalle.</p>
+  <details class="cmp-cad" style="margin-bottom:14px" ${S.psvChOpen?"open":""} id="psvCh"><summary><b style="min-width:0">Cambios de PSV</b><span class="cmp-stats"><span>${nCh?`${nCh} cargado${nCh>1?"s":""}${nProg?` · <b>${nProg}</b> programado${nProg>1?"s":""}`:""}`:`<span class="muted">ninguno cargado</span>`}</span></span><span class="chev">▸</span></summary><div class="cmp-body">${psvChangesHTML()}</div></details>
+  <div class="cmp-list">`;
+  for(const c of CADENAS.filter(c=>!NO_CLIP.has(c.id))){
+    const rows=[];const sin=[];
+    for(const p of PROD()){if(!p.psv)continue;const o=latestPrice(c.id,p.id,lim);const lista=o?(o.lista??o.final):null;
+      if(lista==null){sin.push(p);continue}const ps=psvAt(p.id,c.id,o.fecha);const dev=(lista-ps)/ps*100;
+      rows.push({p,o,lista,ps,dev,cls:clsOf(dev),promo:o.final!=null&&o.final<lista?(o.mecanica||Math.round((1-o.final/lista)*100)+"% OFF"):"",fin:o.final})}
+    const n=rows.length,cnt=k=>rows.filter(r=>r.cls===k).length;const ok=cnt("ok"),dn=cnt("bad")+cnt("warn"),up=cnt("above");
+    const avg=n?rows.reduce((s,r)=>s+r.dev,0)/n:null;const pend=al.filter(a=>a.c.id===c.id&&!a.st);
+    html+=`<details class="cmp-cad" data-cid="${c.id}" ${S.psvOpen.has(c.id)?"open":""}><summary><img src="${c.logo}" alt=""><b>${h(c.name)}</b>
+      <span class="cmp-stats">${n?`<span><b>${n}</b> relevados</span><span class="d ok"><b>${ok}</b> en objetivo</span>${dn?`<span class="d bad"><b>${dn}</b> por debajo</span>`:""}${up?`<span class="d above"><b>${up}</b> por encima</span>`:""}
+        <span class="stack" style="width:110px;min-width:0;align-self:center" title="${cnt("bad")} muy por debajo · ${cnt("warn")} por debajo · ${ok} en objetivo · ${up} por encima"><i style="width:${cnt("bad")/n*100}%;background:var(--bad)"></i><i style="width:${cnt("warn")/n*100}%;background:var(--warn)"></i><i style="width:${ok/n*100}%;background:var(--ok)"></i><i style="width:${up/n*100}%;background:var(--info)"></i></span>
+        <span class="tip" title="Promedio de las diferencias contra el PSV">desvío prom. <b class="d ${clsOf(avg)}">${fmtPct(avg)}</b></span>${pend.length?`<span class="tag bad">${pend.length} sin avisar</span>`:""}`:`<span class="muted">sin precios relevados</span>`}</span><span class="chev">▸</span></summary>
+      <div class="cmp-body">${n?`<div class="tbl-wrap"><table class="t cmp-t"><thead><tr><th>Producto</th><th class="num">PSV</th><th class="num">Precio de lista</th><th class="num">Diferencia</th><th>Estado</th><th>Promo vigente</th><th>Relevado</th></tr></thead>
+        ${Object.keys(CATS).map(k=>{const rs=rows.filter(r=>r.p.cat===k);return rs.length?`<tbody><tr class="cmp-bh"><td colspan="7"><span class="catdot" style="background:${CATS[k].color}"></span>${h(CATS[k].marca)}</td></tr>${rs.map(r=>`<tr class="${r.cls!=="ok"?"psvrow-"+r.cls:""}"><td>${h(r.p.nombre)}</td><td class="num muted">${fmt$(r.ps)}</td><td class="num"><b>${fmt$(r.lista)}</b></td>
+          <td class="num"><span class="d ${r.cls}" style="font-size:15px;font-weight:700">${fmtPct(r.dev)}</span></td><td><span class="tag ${r.cls==="above"?"info":r.cls}">${CLS_LABEL[r.cls]}</span></td>
+          <td>${r.promo?`<span class="small">${h(r.promo)} → ${fmt$(r.fin)}</span>`:`<span class="muted">—</span>`}</td><td class="small muted">${fdate(r.o.fecha)}${r.o.fecha<ym()+"-01"?" (mes ant.)":""}${r.o.fuente==="manual"?` · manual <button class="btn small ghost" data-delp="${r.o.id}" style="color:var(--bad);padding:0 4px">×</button>`:""}</td></tr>`).join("")}</tbody>`:""}).join("")}</table></div>`:`<p class="muted small" style="margin:0">Todavía no hay precios de Kyros o Kansas relevados en ${h(c.name)}.</p>`}
+        ${sin.length&&n?`<p class="small muted" style="margin:10px 0 0">Sin relevar: ${sin.map(p=>h(p.nombre)).join(", ")}.</p>`:""}
+        ${dn+up?`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-copycad="${c.id}">Copiar mensaje para comercial</button>${pend.length?`<button class="btn small primary" data-avisarcad="${c.id}">Marcar ${pend.length>1?"todas avisadas":"avisada"}</button>`:`<span class="tag info">Todo avisado</span>`}</div>`:""}
+      </div></details>`}
   html+=`</div>`;
-
-  const cats=Object.keys(CATS);
-  html+=`<div class="panel"><div class="panel-h"><h3>Precio relevado vs. objetivo</h3><span class="small muted"><span class="d bad">rojo</span> más de ${t*2}% abajo · <span class="d warn">amarillo</span> más de ${t}% abajo · <span class="d ok">verde</span> en objetivo · <span class="d above">azul</span> más de ${t}% arriba</span></div><div class="tbl-wrap"><table class="t"><thead><tr><th>Producto</th><th class="num">PSV objetivo</th>${PCADS.map(c=>`<th class="num"><img class="minilogo" src="${c.logo}" alt="${h(c.name)}" title="${h(c.name)}"></th>`).join("")}</tr></thead><tbody>`;
-  for(const k of cats){const ps=PROD().filter(p=>p.cat===k);html+=`<tr class="cat-h"><td colspan="${PCADS.length+2}"><span class="catdot" style="background:${CATS[k].color}"></span>${CATS[k].name} · ${CATS[k].marca}</td></tr>`;
-    if(!ps.length){html+=`<tr><td colspan="${PCADS.length+2}" class="muted">A completar: cargá los productos y sus PSV con “Editar precios sugeridos”.</td></tr>`;continue}
-    for(const p of ps){html+=`<tr><td>${h(p.nombre)}${p.tier?` <span class="tag neutral">${h(p.tier)}</span>`:""}</td><td class="num">${p.psv?fmt$(psvAt(p.id,"",lim)):`<span class="muted">A completar</span>`}</td>`;
-      for(const c of PCADS){const o=latestPrice(c.id,p.id,lim);const pr=priceFor(o);const sur=surtidoOf(c.id);
-        if(pr==null){html+=sur&&!sur.includes(p.id)?`<td class="num small muted" title="No está en el surtido acordado">No listado</td>`:`<td class="num muted">—</td>`;continue}
-        if(!p.psv){html+=`<td class="num psvcell">${fmt$(pr)}</td>`;continue}
-        const ps=psvAt(p.id,c.id,o.fecha);const gen=psvAt(p.id,"",lim);const d=(pr-ps)/ps*100;const cls=clsOf(d);
-        html+=`<td class="num psvcell ${cls!=="ok"?"cell-"+cls:""}" title="${CLS_LABEL[cls]} · objetivo ${fmt$(ps)} · ${fdate(o.fecha)} · ${o.fuente==="clip"?"clipping":"manual"}${o.mecanica?" · "+h(o.mecanica):""}"><span class="p">${fmt$(pr)}</span><span class="d ${cls}">${fmtPct(d)}</span>${ps!==gen?`<span class="small muted" style="display:block">PSV ${fmt$(ps)}</span>`:""}</td>`}
-      html+=`</tr>`}}
-  html+=`</tbody></table></div></div>`;
-  const man=S.precios.filter(p=>ymOf(p.fecha)===ym()).sort((a,b)=>b.fecha.localeCompare(a.fecha));
-  if(man.length)html+=`<div class="panel" style="margin-top:16px"><div class="panel-h"><h3>Precios cargados a mano</h3></div><div class="tbl-wrap"><table class="t"><thead><tr><th>Fecha</th><th>Cadena</th><th>Producto</th><th class="num">Lista</th><th class="num">Final</th><th>Promo</th><th></th></tr></thead><tbody>${man.map(m=>`<tr><td>${fdate(m.fecha)}</td><td>${h(CAD[m.cadena]?.name)}</td><td>${h(prodById(m.productoId)?.nombre||m.productoId)}</td><td class="num">${fmt$(num(m.lista))}</td><td class="num">${fmt$(num(m.final))}</td><td>${h(m.mecanica||"")}</td><td><button class="btn small ghost" data-delp="${m.id}" style="color:var(--bad)">Borrar</button></td></tr>`).join("")}</tbody></table></div></div>`;
   v.innerHTML=html;
-  const msg=a=>`Hola Maxi! En ${a.c.name} el ${a.p.nombre} está a ${fmt$(a.pr)} (relevado el ${fdate(a.o.fecha)}), ${fmtPct(a.dev)} ${a.dev<0?"por debajo":"por encima"} del precio objetivo de ${fmt$(a.ps)}.${a.o.mecanica?" Promo visible: "+a.o.mecanica+".":""} ¿Lo podés hablar con la cadena?`;
+  v.querySelectorAll("details.cmp-cad[data-cid]").forEach(dt=>dt.addEventListener("toggle",()=>{dt.open?S.psvOpen.add(dt.dataset.cid):S.psvOpen.delete(dt.dataset.cid)}));
+  v.querySelector("#psvCh").addEventListener("toggle",e=>{S.psvChOpen=e.target.open});
   const copy=txt=>navigator.clipboard?.writeText(txt).then(()=>toast("Mensaje copiado"),()=>toast("No se pudo copiar automáticamente"));
-  v.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copy(msg(al.find(a=>a.key===b.dataset.copy))));
-  const lines=its=>its.slice().sort((a,b)=>a.dev-b.dev).map(a=>`• ${a.p.nombre}: ${fmt$(a.pr)} (${fmtPct(a.dev)} vs ${fmt$(a.ps)})`).join("\n");
-  v.querySelector("#copyAll")?.addEventListener("click",()=>copy("Hola Maxi! Precios fuera del objetivo PSV ("+MESES[S.m]+"):\n"+groups.map(g=>{const its=g.items.filter(a=>!a.st);return its.length?`\n${g.c.name.toUpperCase()}\n`+lines(its):""}).join("")));
-  v.querySelectorAll("[data-copycad]").forEach(b=>b.onclick=()=>{const cid=b.dataset.copycad;const its=open.filter(a=>a.c.id===cid);copy(`Hola Maxi! En ${CAD[cid].name} hay ${its.length} precio${its.length>1?"s":""} fuera del objetivo PSV (${MESES[S.m]}):\n`+lines(its)+"\n¿Lo podés hablar con la cadena?")});
-  v.querySelectorAll("[data-avisarcad]").forEach(b=>b.onclick=()=>setAlertsMany(open.filter(a=>a.c.id===b.dataset.avisarcad)));
-  v.querySelectorAll("[data-avisar]").forEach(b=>b.onclick=()=>{const a=al.find(x=>x.key===b.dataset.avisar);setAlert(a.key,{estado:"avisado",precio:a.pr,at:Date.now(),by:P.me||""})});
-  v.querySelectorAll("[data-reopen]").forEach(b=>b.onclick=()=>setAlert(b.dataset.reopen,null));
-  v.querySelectorAll("[data-delp]").forEach(b=>b.onclick=()=>Store.del("precios",b.dataset.delp));
+  v.querySelectorAll("[data-copycad]").forEach(b=>b.onclick=()=>{const cid=b.dataset.copycad;const its=al.filter(a=>a.c.id===cid).sort((x,y)=>x.dev-y.dev);
+    copy(`Hola Maxi! En ${CAD[cid].name} hay ${its.length} precio${its.length>1?"s":""} fuera del precio sugerido (${MESES[S.m]}):\n`+its.map(a=>`• ${a.p.nombre}: ${fmt$(a.pr)} (${fmtPct(a.dev)} vs PSV ${fmt$(a.ps)})`).join("\n")+"\n¿Lo podés hablar con la cadena?")});
+  v.querySelectorAll("[data-avisarcad]").forEach(b=>b.onclick=()=>setAlertsMany(al.filter(a=>a.c.id===b.dataset.avisarcad&&!a.st)));
+  v.querySelectorAll("[data-delp]").forEach(b=>b.onclick=async e=>{e.preventDefault();if(await askConfirm("¿Borrar este precio cargado a mano?"))Store.del("precios",b.dataset.delp)});
   document.querySelectorAll("[data-newpsvc]").forEach(b=>b.onclick=()=>openPsvCambio(null));
   v.querySelectorAll("[data-psvc]").forEach(b=>b.onclick=()=>openPsvCambio(S.psvCambios.find(x=>x.id===b.dataset.psvc)));
 }
+
 async function setAlertsMany(list){const map={...S.alertas};for(const a of list)map[a.key]={estado:"avisado",precio:a.pr,at:Date.now(),by:P.me||""};await Store.put("config","alertas",{map});toast("Marcadas como avisadas")}
 async function setAlert(key,val){const map={...S.alertas};if(val)map[key]=val;else delete map[key];await Store.put("config","alertas",{map})}
 async function savePsvCfg(patch){const cur={productos:PROD(),tolerancia:TOL(),...patch};await Store.put("config","psv",cur);toast("Configuración guardada")}
@@ -1601,15 +1582,11 @@ clip:{t:"Cómo leer el Clipping",b:`<p>Es el relevamiento diario de <b>Kyros y K
 <li><b>Promos propias detectadas:</b> todas las promos de nuestras marcas que aparecieron en el mes, con el rango de días en que se vieron.</li>
 <li><b>Marcas blancas y competencia:</b> si en una captura aparecen productos de la marca blanca que le fabricamos a la cadena (Cuisine & Co, Carrefour Classic, Dia) o de la competencia, se guardan en “También en la captura” y se analizan en la solapa Competencia.</li>
 <li><b>📥 Resumen del mes:</b> descarga un Excel de la cadena elegida con los cambios de precio de lista del mes, las promociones (desde qué día y hasta qué día se vieron), el calendario de promociones comparado con lo relevado y las promos que se vieron sin estar planificadas.</li><li>Los precios de Kyros y Kansas pasan solos a Precio sugerido de venta.</li></ul>`},
-psv:{t:"Cómo leer Precio sugerido de venta",b:`<p>El PSV es el precio objetivo en góndola. Esta solapa muestra, por cadena y producto, si el precio real está en objetivo, por debajo o por encima, para que comercial lo trabaje con cada cadena.</p>
-<ul><li><b>Cambios de precio sugerido:</b> aumentos o cambios del PSV con fecha, para todas las cadenas o para una sola (ej. “desde el 02/11, en Coto, hummus Kyros a $4.900”). Desde esa fecha el nuevo valor pasa a ser el objetivo en toda la página, y el cambio aparece marcado en verde en el calendario.</li><li><b>Tolerancia:</b> margen aceptado (por defecto ±5%). Dentro de ese margen se considera “en objetivo”.</li>
-<li><b>Comparar:</b> “precio de lista” compara el precio sin promo; “precio con promo” compara lo que paga el cliente.</li>
-<li><b>Productos relevados:</b> cuántos productos tienen al menos un precio registrado en esa cadena hasta la fecha.</li>
-<li><b>En objetivo:</b> porcentaje de esos productos que está dentro de la tolerancia.</li>
-<li><b>Distribución:</b> barra con la proporción de productos muy por debajo (rojo), por debajo (amarillo), en objetivo (verde) y por encima (azul).</li>
-<li><b>Desvío promedio:</b> promedio de las diferencias de cada producto contra su PSV. Negativo = la cadena vende, en promedio, más barato que el objetivo.</li>
-<li><b>Alertas:</b> cada precio fuera de tolerancia. “Marcar avisado” registra que comercial ya fue notificado; si el precio cambia, la alerta vuelve a aparecer.</li>
-<li><b>Tabla de precios:</b> último precio relevado de cada producto en cada cadena y su % contra el PSV. “No listado” = el producto no está en el surtido acordado.</li></ul>`},
+psv:{t:"Cómo leer Precio sugerido de venta",b:`<p>El PSV es el precio sugerido que les damos a las cadenas. Acá se ve, cadena por cadena, el <b>precio de lista</b> (sin promo) de cada producto Kyros y Kansas y cuánto se aleja del PSV.</p>
+<ul><li><b>Fila de cada cadena:</b> productos relevados, cuántos están en objetivo, por debajo y por encima, una barra con la proporción y el desvío promedio.</li>
+<li><b>Al abrir una cadena:</b> por producto, el PSV, el precio de lista relevado, la diferencia en % y el estado. Verde = en objetivo (dentro de la tolerancia, ±5% por defecto); amarillo/rojo = por debajo; azul = por encima. También se ve si tenía una promo vigente y la fecha del relevamiento.</li>
+<li><b>Copiar mensaje para comercial</b> arma el texto con los productos fuera del PSV de esa cadena; <b>Marcar avisadas</b> deja registro de que comercial ya fue notificado (el número rojo de la solapa baja).</li>
+<li><b>Cambios de PSV:</b> aumentos o cambios del precio sugerido con fecha, para todas las cadenas o para una (ej. Coto hummus $4.900 desde el 02/11). Desde esa fecha, ese pasa a ser el objetivo.</li></ul>`},
 comp:{t:"Cómo leer Competencia",b:`<p>Una fila por cadena. Tocá una cadena para abrirla y ver lo relevado en el mes.</p>
 <ul><li><b>Marcas competidoras:</b> cada marca con sus variedades, el precio de lista, la promo que tenía (si había) y el precio con promo. Se muestra el último dato relevado del mes.</li>
 <li><b>Marca blanca:</b> las variedades de la marca blanca que le fabricamos a esa cadena (Cuisine & Co, Carrefour Classic, Dia), con precio de lista y promo.</li>
