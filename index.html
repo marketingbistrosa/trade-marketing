@@ -351,6 +351,17 @@ details.cg-sec summary{cursor:pointer;font-family:"Barlow Condensed",sans-serif;
 .bar.mpb{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.22) 0 5px,transparent 5px 10px)}
 .bar.mpb::before{content:"MB";font-size:10px;font-weight:700;background:#fff;color:#333;border-radius:3px;padding:0 3px;margin-right:5px;flex:none}
 .tipo-sel{display:flex;flex-direction:column;gap:6px}.tipo-sel label{flex-direction:row!important;align-items:center;gap:8px!important;color:var(--ink)!important;font-size:15px!important;cursor:pointer}
+.cmp-list{display:flex;flex-direction:column;gap:8px}
+details.cmp-cad{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+details.cmp-cad>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;flex-wrap:wrap}
+details.cmp-cad>summary::-webkit-details-marker{display:none}
+details.cmp-cad>summary img{height:28px;width:96px;object-fit:contain;background:var(--logo-bg);border-radius:4px;padding:2px 4px}
+details.cmp-cad>summary>b{font-family:"Barlow Condensed",sans-serif;font-size:20px;min-width:110px}
+.cmp-stats{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:14px;flex:1}
+.chev{color:var(--muted);transition:transform .15s}details.cmp-cad[open] .chev{transform:rotate(90deg)}
+details.cmp-cad[open]>summary{border-bottom:1px solid var(--line);background:var(--surface-2)}
+.cmp-body{padding:12px 16px 16px}
+.cmp-t td{padding:5px 8px}.cmp-bh td{background:var(--surface-2);font-weight:600}
 .guide{background:var(--info-bg);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
 .guide summary{cursor:pointer;padding:10px 16px;font-weight:600;color:var(--info)}
 .guide-b{padding:0 16px 12px;max-width:95ch;font-size:14px}
@@ -961,7 +972,8 @@ function latestMP(cid,pid,lim){let best=null;for(const o of mpObs()){if(o.cadena
 function mpGap(cid,pid,mpPrice,lim){const p=prodById(pid);const o=latestPrice(cid,pid,lim);const ours=priceFor(o);const ref=ours??psvAt(pid,cid,lim);if(mpPrice==null||!ref)return null;return {gap:(mpPrice-ref)/ref*100,ours,ref,vsPSV:ours==null}}
 function mpTd(it,c){const pr=S.psvMode==="lista"?(num(it.precioLista)??num(it.precioFinal)):(num(it.precioFinal)??num(it.precioLista));const gp=guessPid(it);const g=gp?mpGap(c.cadena,gp,pr,c.fecha):null;
   if(!g)return `<td class="num muted small">—</td>`;return `<td class="num"><span class="d ${g.gap<0?"warn":"above"} psvcell" title="${g.vsPSV?"Contra nuestro PSV "+fmt$(g.ref):"Contra nuestro producto en la cadena "+fmt$(g.ref)} (${h(prodById(it.productoId)?.nombre||"")})">${fmtPct(g.gap)}${g.vsPSV?" <span class='muted'>PSV</span>":""}</span></td>`}
-function isMp(it,cid){if(it.propio)return false;if(it.mp)return true;const n=normTxt(mpOf(cid)),m=normTxt(it.marca);return !!n&&!!m&&(m===n||m.includes(n)||n.includes(m))}
+const isOurBrand=it=>/kyros|kansas/.test(normTxt(it.marca)+" "+normTxt(it.producto));
+function isMp(it,cid){if(it.propio||isOurBrand(it))return false;if(it.mp)return true;const n=normTxt(mpOf(cid)),m=normTxt(it.marca);return !!n&&!!m&&(m===n||m.includes(n)||n.includes(m))}
 function guessPid(it){if(it.productoId)return it.productoId;const t=normTxt(it.producto);let best=null;
   for(const p of PROD()){if(it.categoria&&it.categoria!=="otra"&&p.cat!==it.categoria)continue;const key=normTxt(p.nombre.replace(/^(Hummus|Salsa|Pan Hamburguesa|Pan de|Pan) /i,"").replace(/^(Kyros|Kansas) /i,"").replace(/ Kyros$/i,""));if(key&&t.includes(key)&&(!best||key.length>best.k.length))best={id:p.id,k:key}}
   return best?best.id:null}
@@ -1598,11 +1610,11 @@ psv:{t:"Cómo leer Precio sugerido de venta",b:`<p>El PSV es el precio objetivo 
 <li><b>Desvío promedio:</b> promedio de las diferencias de cada producto contra su PSV. Negativo = la cadena vende, en promedio, más barato que el objetivo.</li>
 <li><b>Alertas:</b> cada precio fuera de tolerancia. “Marcar avisado” registra que comercial ya fue notificado; si el precio cambia, la alerta vuelve a aparecer.</li>
 <li><b>Tabla de precios:</b> último precio relevado de cada producto en cada cadena y su % contra el PSV. “No listado” = el producto no está en el surtido acordado.</li></ul>`},
-comp:{t:"Cómo leer Competencia",b:`<p>Analiza las otras marcas que están en góndola junto a Kyros y Kansas, en dos bloques. Se llena con los relevamientos (la sección “Competencia” de la carga) o con “+ Cargar promo de competencia”.</p>
-<ul><li><b>Marcas blancas que fabricamos:</b> la marca de cada cadena que producimos nosotros (Cuisine & Co, Carrefour Classic, Dia). Se compara su precio con nuestro producto equivalente; <b>brecha</b> negativa = la marca blanca está más barata. También se ven sus promos o acuerdos vigentes.</li><li><b>Marcas competidoras:</b> el resto de las marcas. Lo que sigue explica esa parte.</li><li><b>Productos vistos:</b> cantidad de registros de esa marca en el mes.</li><li><b>Con promo:</b> cuántos de esos tenían alguna promoción.</li>
-<li><b>Desc. prom.:</b> descuento promedio que ofreció esa marca.</li><li><b>Precio prom.:</b> precio final promedio relevado.</li>
-<li><b>Lectura rápida:</b> frases armadas automáticamente con los datos del mes: si somos más caros o más baratos que la competencia y si promocionamos más o menos, por categoría. Respeta los filtros de cadena y categoría.</li><li><b>Análisis del equipo:</b> espacio para escribir la conclusión del mes (o pedirle a Claude un borrador) y guardarla para que la vean comercial y gerencia.</li>
-<li><b>Nuestro precio vs. competencia:</b> PSV promedio de nuestra línea contra el precio promedio de la competencia en esa categoría. No está ajustado por gramaje: para comparar bien, mirá presentaciones similares en el detalle.</li></ul>`}
+comp:{t:"Cómo leer Competencia",b:`<p>Una fila por cadena. Tocá una cadena para abrirla y ver lo relevado en el mes.</p>
+<ul><li><b>Marcas competidoras:</b> cada marca con sus variedades, el precio de lista, la promo que tenía (si había) y el precio con promo. Se muestra el último dato relevado del mes.</li>
+<li><b>Marca blanca:</b> las variedades de la marca blanca que le fabricamos a esa cadena (Cuisine & Co, Carrefour Classic, Dia), con precio de lista y promo.</li>
+<li><b>📥 Resumen del mes:</b> Excel de la cadena con la comparación contra Kyros y Kansas (marca blanca vs. nuestra y competencia vs. nuestra por categoría), además de precios, promos y calendario.</li>
+<li>El filtro de arriba muestra una sola categoría (Hummus, Salsas o Panes).</li></ul>`}
 };
 function guideHTML(tab){const g=GUIDES[tab];if(!g)return"";const closed=S.guideOpen!==tab;
   return `<details class="guide" data-guide="${tab}" ${closed?"":"open"}><summary>ⓘ ${g.t}</summary><div class="guide-b">${g.b}</div></details>`}
@@ -1836,6 +1848,18 @@ async function downloadMonthSummary(cid){
   // promos vistas sin planificar
   const unplanned=periods.filter(q=>!planned.some(p=>p.desde<=q.hasta&&p.hasta>=q.desde&&((q.p.tipo==="Marca blanca")===isMpPromo(p))&&(p.cat==="delidips"||p.cat==="aconfirmar"||!q.p.pid||prodById(q.p.pid)?.cat===p.cat)&&(!p.productos?.length||!q.p.pid||p.productos.includes(q.p.pid))));
   const r4=unplanned.map(q=>[q.p.tipo,q.p.name,q.promo,dd(q.desde),dd(q.hasta),q.n]);
+  // comparación con nuestras marcas
+  const cd=compData(cid,"");const ourL=pid=>{const o=latestPrice(cid,pid,b);return o?(o.lista??o.final):null};
+  const r5=cd.mb.map(it=>{const pid=guessPid(it);const p=pid&&prodById(pid);const ref=p?(ourL(pid)??psvAt(pid,cid,b)):null;const ml=num(it.precioLista)??num(it.precioFinal);
+    const ourIt=p?S.clips.filter(c=>c.cadena===cid&&c.fecha>=a&&c.fecha<=b).sort((x,y)=>y.fecha.localeCompare(x.fecha)).flatMap(c=>(c.items||[]).filter(i=>i.propio&&i.productoId===pid))[0]:null;
+    return [it.producto,ml??"",hasPromo(it)?promoTxt(it):"",p?p.nombre:"(sin equivalente)",ref??"",!p?"":ourL(pid)==null?"PSV":"Relevado",ref&&ml?Math.round((ml-ref)/ref*1000)/10:"",ourIt&&hasPromo(ourIt)?promoTxt(ourIt):""]});
+  const avg=x=>x.length?Math.round(x.reduce((s,v)=>s+v,0)/x.length):"";
+  const r6=Object.keys(CATS).map(k=>{const its=cd.comp.filter(i=>i.categoria===k);if(!its.length)return null;const pr=its.map(i=>num(i.precioLista)??num(i.precioFinal)).filter(x=>x!=null);
+    const own=PROD().filter(p=>p.cat===k);const ownRel=own.map(p=>ourL(p.id)).filter(x=>x!=null);const psv=own.filter(p=>p.psv).map(p=>psvAt(p.id,cid,b));const ref=ownRel.length?avg(ownRel):avg(psv);const ca=avg(pr);
+    const ownItems=S.clips.filter(c=>c.cadena===cid&&c.fecha>=a&&c.fecha<=b).flatMap(c=>(c.items||[]).filter(i=>i.propio&&i.categoria===k));
+    return [CATS[k].name,its.length,ca,pr.length?Math.min(...pr):"",pr.length?Math.max(...pr):"",its.length?Math.round(its.filter(hasPromo).length/its.length*100):"",ref,ownRel.length?"Relevado":"PSV",ref&&ca?Math.round((ref-ca)/ca*1000)/10:"",ownItems.length?Math.round(ownItems.filter(hasPromo).length/ownItems.length*100):""]}).filter(Boolean);
+  const r7=cd.comp.map(it=>[brandCanon(cd.comp)(it.marca),it.producto,CATS[it.categoria]?.name||"Otra",num(it.precioLista)??"",hasPromo(it)?promoTxt(it):"",hasPromo(it)?(num(it.precioFinal)??""):"",dd(it.fecha)]);
+  const r8=cd.mb.map(it=>[it.producto,CATS[it.categoria]?.name||"Otra",num(it.precioLista)??"",hasPromo(it)?promoTxt(it):"",hasPromo(it)?(num(it.precioFinal)??""):"",dd(it.fecha)]);
   // resumen
   const vistas=r3.filter(r=>r[7]==="Sí").length;
   const r0=[["Resumen del mes · "+cad.name],["Mes",mes],["Relevamientos cargados",clips.length],["Días con relevamiento",dates.length],["Productos Kyros / Kansas relevados",list.filter(p=>p.tipo==="Nuestra").length],["Productos de marca blanca relevados",list.filter(p=>p.tipo==="Marca blanca").length],["Cambios de precio de lista en el mes",cambios],["Promociones vistas (períodos)",periods.length],["Promos planificadas en el calendario",planned.length],["Planificadas que se vieron en el relevamiento",vistas],["Promos vistas que no estaban en el calendario",unplanned.length],[],["Generado",new Date().toLocaleString("es-AR")]];
@@ -1844,6 +1868,10 @@ async function downloadMonthSummary(cid){
   add("Precios de lista",[h1,...(r1.length?r1:[["Sin relevamientos de Kyros/Kansas o marca blanca en el mes"]])],[13,40,12,...dates.map(()=>11),13,13,12,10]);
   add("Promociones",[["Tipo","Producto","Promo","Desde (primer día visto)","Hasta (último día visto)","Relevamientos con la promo","Precio de lista","Precio con promo","% desc."],...(r2.length?r2:[["No se vieron promociones en el mes"]])],[13,40,22,14,14,12,13,14,8]);
   add("Calendario vs. visto",[["Tipo","Marca","Productos","Mecánica","Desde","Hasta","Estado comercial","¿Se vio?","Relevamientos donde se vio","Primera vez vista","Última vez vista","Cumplimiento (marketing)","Observaciones"],...(r3.length?r3:[["No hay promos planificadas para esta cadena en el mes"]])],[13,20,40,16,11,11,20,16,12,12,12,16,30]);
+  add("Marca blanca vs nuestra",[["Producto marca blanca","Precio de lista","Promo marca blanca","Nuestro equivalente","Nuestro precio de lista","Referencia","Diferencia % (marca blanca vs nuestra)","Promo nuestra"],...(r5.length?r5:[["Sin marca blanca relevada en el mes"]])],[40,13,18,30,14,10,16,16]);
+  add("Competencia vs nuestra",[["Categoría","Productos de competencia","Precio de lista promedio","Mínimo","Máximo","% con promo","Nuestro precio de lista promedio","Referencia","Diferencia % (nuestra vs competencia)","% nuestros con promo"],...(r6.length?r6:[["Sin competencia relevada en el mes"]])],[12,12,14,10,10,10,16,10,18,12]);
+  add("Competencia (detalle)",[["Marca","Producto","Categoría","Precio de lista","Promo","Precio con promo","Relevado"],...(r7.length?r7:[["Sin competencia relevada"]])],[18,44,11,13,22,14,11]);
+  add("Marca blanca (detalle)",[["Producto","Categoría","Precio de lista","Promo","Precio con promo","Relevado"],...(r8.length?r8:[["Sin marca blanca relevada"]])],[44,11,13,22,14,11]);
   add("Promos sin planificar",[["Tipo","Producto","Promo","Desde","Hasta","Relevamientos"],...(r4.length?r4:[["Todas las promos vistas estaban en el calendario"]])],[13,40,22,11,11,12]);
   X.writeFile(wb,`resumen-${cid}-${ym()}.xlsx`);toast("Resumen descargado");
 }
@@ -1861,32 +1889,48 @@ function brandCanon(items){const cnt=new Map(),names=new Map();
     for(const [k,h2] of map)if(h2===hd)for(const [o,n] of names.get(k)||[])all.set(o,(all.get(o)||0)+n);
     const best=[...all.entries()].sort((a,b)=>(b[1]-a[1])||((a[0]===a[0].toUpperCase())-(b[0]===b[0].toUpperCase())))[0];display.set(hd,best?best[0]:hd)}
   return m=>display.get(map.get(brandKey(m))||brandKey(m))||String(m||"Sin marca visible")}
+function compData(cid,catF){
+  const a=ym()+"-01",b=ym()+"-"+pad(daysIn(S.y,S.m));const comp=new Map(),mb=new Map();let last="";
+  const clips=S.clips.filter(c=>c.cadena===cid&&c.fecha>=a&&c.fecha<=b).sort((x,y)=>x.fecha.localeCompare(y.fecha)||(x.createdAt||0)-(y.createdAt||0));
+  for(const c of clips){if(c.fecha>last)last=c.fecha;for(const it of (c.items||[])){if(it.propio||isOurBrand(it))continue;if(catF&&it.categoria!==catF)continue;
+    const r={...it,fecha:c.fecha};if(isMp(it,cid)){mb.set(normTxt(it.producto),r)}else comp.set(normTxt((it.marca||"")+"|"+it.producto),r)}}
+  for(const x of S.comp){if(x.cadena!==cid||!x.fecha||x.fecha<a||x.fecha>b)continue;if(catF&&x.categoria!==catF)continue;const k=normTxt((x.marca||"")+"|"+x.producto);const prev=comp.get(k);if(!prev||x.fecha>=prev.fecha)comp.set(k,{...x,manual:true});if(x.fecha>last)last=x.fecha}
+  return {comp:[...comp.values()],mb:[...mb.values()],last}}
+function compRowHTML(it){const l=num(it.precioLista),f=num(it.precioFinal);const promo=hasPromo(it)?promoTxt(it):"";
+  return `<tr><td>${h(it.producto)}${it.manual?` <span class="tag neutral" title="Cargado a mano">manual</span> <button class="btn small ghost" data-delc="${it.id}" style="color:var(--bad);padding:0 4px">×</button>`:""}</td><td class="small muted">${h(CATS[it.categoria]?.name||"Otra")}</td>
+    <td class="num">${l!=null?fmt$(l):(f!=null?fmt$(f):"—")}</td><td>${promo?`<span class="tag warn">${h(promo)}</span>`:`<span class="muted">—</span>`}</td>
+    <td class="num">${promo&&f!=null&&f!==l?`<b>${fmt$(f)}</b>`:`<span class="muted">—</span>`}</td><td class="small muted">${fdate(it.fecha)}</td></tr>`}
+const COMP_HEAD=`<thead><tr><th>Variedad</th><th>Categoría</th><th class="num">Precio de lista</th><th>Promo</th><th class="num">Precio con promo</th><th>Relevado</th></tr></thead>`;
 function renderComp(v,tb){
-  tb.innerHTML=`<select id="cCad" aria-label="Cadena"><option value="">Todas las cadenas</option>${CADENAS.map(c=>`<option value="${c.id}" ${S.compCadena===c.id?"selected":""}>${c.name}</option>`).join("")}</select>
-  <select id="cCat" aria-label="Categoría"><option value="">Todas las categorías</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${S.compCat===k?"selected":""}>${c.name}</option>`).join("")}</select>
-  <button class="btn" id="addCompXl">📊 Importar Excel</button><button class="btn" id="addCompImg">⚡ Carga rápida</button><button class="btn primary" id="addComp">+ Cargar promo de competencia</button>`;
-  tb.querySelector("#cCad").onchange=e=>{S.compCadena=e.target.value;render()};
+  tb.innerHTML=`<select id="cCat" aria-label="Categoría"><option value="">Todas las categorías</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${S.compCat===k?"selected":""}>${c.name}</option>`).join("")}</select>
+  <button class="btn" id="addCompXl">📊 Importar Excel</button><button class="btn" id="addCompImg">⚡ Carga rápida</button><button class="btn" id="addComp">+ Cargar a mano</button>`;
   tb.querySelector("#cCat").onchange=e=>{S.compCat=e.target.value;render()};
   tb.querySelector("#addComp").onclick=()=>openComp();
   tb.querySelector("#addCompXl").onclick=()=>openImportXL();
-  tb.querySelector("#addCompImg").onclick=()=>openCarga(S.compCadena||S.clipCadena);
-  const items=compItems().filter(i=>(!S.compCadena||i.cadena===S.compCadena)&&(!S.compCat||i.categoria===S.compCat));
-  // summary by brand
-  const BN=brandCanon(items);const by=new Map();for(const i of items){const k=BN(i.marca);const e=by.get(k)||{marca:k,cat:i.categoria,cats:new Set(),n:0,promos:0,desc:[],precios:[],cads:new Set()};
-    e.n++;e.cats.add(i.categoria);if(i.mecanica||i.descuentoPct)e.promos++;const dp=num(i.descuentoPct)??(num(i.precioLista)&&num(i.precioFinal)&&num(i.precioFinal)<num(i.precioLista)?(1-num(i.precioFinal)/num(i.precioLista))*100:null);if(dp)e.desc.push(dp);if(num(i.precioFinal))e.precios.push(num(i.precioFinal));e.cads.add(i.cadena);by.set(k,e)}
-  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
-  const rows=[...by.values()].sort((a,b)=>(a.marca==="Sin marca visible")-(b.marca==="Sin marca visible")||b.n-a.n);
-  let html=(S.analyzing.size?`<div class="panel" style="margin-bottom:16px"><div class="panel-b"><span class="spinner"></span> Leyendo ${S.analyzing.size} imagen${S.analyzing.size>1?"es":""}… los productos aparecen acá en cuanto termina.</div></div>`:"")+`${whiteLabelHTML()}<h3 class="sec2" style="margin-top:4px">Marcas competidoras <span class="muted small" style="font-family:Barlow,sans-serif;font-weight:400">· otras marcas del mercado (ej. Tau), sin las marcas blancas que fabricamos</span></h3><div class="grid2" style="margin-bottom:16px"><div class="panel"><div class="panel-h"><h3>Resumen por marca competidora</h3><span class="small muted">${MESES[S.m]}</span></div>
-  ${rows.length?`<div class="tbl-wrap"><table class="t"><thead><tr><th>Marca</th><th>Categoría</th><th class="num">Productos vistos</th><th class="num">Con promo</th><th class="num">Desc. prom.</th><th class="num">Precio prom.</th><th>Cadenas</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td><b>${h(r.marca)}</b></td><td>${[...r.cats].map(c=>`<div style="white-space:nowrap"><span class="catdot" style="background:${CATS[c]?.color||"var(--muted)"}"></span>${CATS[c]?.name||"Otra"}</div>`).join("")}</td><td class="num">${r.n}</td><td class="num">${r.promos}</td><td class="num">${avg(r.desc)!=null?Math.round(avg(r.desc))+"%":"—"}</td><td class="num">${fmt$(avg(r.precios))}</td><td>${[...r.cads].map(c=>`<img class="minilogo" src="${CAD[c]?.logo}" alt="${h(CAD[c]?.name)}" title="${h(CAD[c]?.name)}">`).join(" ")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty"><strong>Sin datos de competencia en ${MESES[S.m]}</strong>Se llenan solos desde las capturas de Clipping, o cargalos a mano.</div>`}</div>
-  <div class="panel"><div class="panel-h"><h3>Nuestro precio vs. competencia</h3></div><div class="panel-b">${insightHTML(items)}<h4 class="sec" style="margin-top:14px">Precios promedio por categoría</h4>${compareOwn(items)}${teamNoteHTML()}</div></div></div>`;
-  html+=`<details class="panel" id="compDet" ${S.compDetOpen?"open":""}><summary class="panel-h" style="cursor:pointer"><h3>${S.compDetOpen?"▾":"▸"} Detalle</h3><span class="small muted">${items.length} registro${items.length===1?"":"s"} · tocá para ${S.compDetOpen?"cerrar":"ver todos los productos"}</span></summary>${items.length?`<div class="tbl-wrap"><table class="t"><thead><tr><th>Fecha</th><th>Cadena</th><th>Marca</th><th>Producto</th><th>Promo</th><th class="num">Lista</th><th class="num">Final</th><th>Origen</th><th></th></tr></thead><tbody>
-  ${items.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")).map(i=>`<tr><td>${fdate(i.fecha)}</td><td><img class="minilogo" src="${CAD[i.cadena]?.logo}" alt=""> ${h(CAD[i.cadena]?.name)}</td><td>${h(BN(i.marca))}</td><td><span class="catdot" style="background:${CATS[i.categoria]?.color||"var(--muted)"}"></span>${h(i.producto)}${i.presentacion?` <span class="muted small">${h(i.presentacion)}</span>`:""}</td><td>${h(i.mecanica||(i.descuentoPct?i.descuentoPct+"% OFF":""))||"—"}</td><td class="num">${fmt$(num(i.precioLista))}</td><td class="num"><b>${fmt$(num(i.precioFinal))}</b></td><td><span class="tag ${i.fuente==="clip"?"info":"neutral"}">${i.fuente==="clip"?"Clipping":"Manual"}</span></td><td>${i.fuente==="manual"?`<button class="btn small ghost" data-delc="${i.id}" style="color:var(--bad)">Borrar</button>`:""}</td></tr>`).join("")}</tbody></table></div>`:""}</details>`;
+  tb.querySelector("#addCompImg").onclick=()=>openCarga(S.clipCadena);
+  if(!S.compOpen)S.compOpen=new Set();
+  const cads=CADENAS.filter(c=>!NO_CLIP.has(c.id));
+  let html=`<p class="muted" style="margin:0 0 12px">Precios y promos de la competencia y de las marcas blancas, por cadena, en ${MESES[S.m]}. Tocá una cadena para ver el detalle. La comparación con Kyros y Kansas está en el <b>📥 Resumen del mes</b> de cada cadena.</p><div class="cmp-list">`;
+  for(const c of cads){const d=compData(c.id,S.compCat);const mp=mpOf(c.id);
+    const brands=new Map();const BN=brandCanon(d.comp);for(const it of d.comp){const k=BN(it.marca);(brands.get(k)||brands.set(k,[]).get(k)).push(it)}
+    const nPromo=d.comp.filter(hasPromo).length+d.mb.filter(hasPromo).length;const empty=!d.comp.length&&!d.mb.length;
+    html+=`<details class="cmp-cad" data-cid="${c.id}" ${S.compOpen.has(c.id)?"open":""}><summary>
+      <img src="${c.logo}" alt=""><b>${h(c.name)}</b>
+      <span class="cmp-stats">${empty?`<span class="muted">sin relevamientos en el mes</span>`:`<span><b>${d.comp.length}</b> de competencia${brands.size?` · ${brands.size} marca${brands.size>1?"s":""}`:""}</span>${mp?`<span><b>${d.mb.length}</b> de ${h(mp)}</span>`:""}<span>${nPromo?`<b class="d warn">${nPromo}</b> con promo`:"sin promos"}</span><span class="muted">últ. ${fdate(d.last)}</span>`}</span>
+      <span class="chev">▸</span></summary><div class="cmp-body">
+      ${empty?`<p class="muted small" style="margin:0">Todavía no hay datos de esta cadena en ${MESES[S.m]}.</p>`:`
+      <h4 class="sec">Marcas competidoras</h4>
+      ${d.comp.length?`<div class="tbl-wrap"><table class="t cmp-t">${COMP_HEAD}${[...brands.entries()].sort((x,y)=>(x[0]==="Sin marca visible")-(y[0]==="Sin marca visible")||x[0].localeCompare(y[0])).map(([bn,its])=>`<tbody><tr class="cmp-bh"><td colspan="6">${h(bn)} <span class="muted small">· ${its.length} variedad${its.length>1?"es":""}${its.some(hasPromo)?` · ${its.filter(hasPromo).length} con promo`:""}</span></td></tr>${its.sort((x,y)=>(x.categoria||"").localeCompare(y.categoria||"")||x.producto.localeCompare(y.producto)).map(compRowHTML).join("")}</tbody>`).join("")}</table></div>`:`<p class="muted small">Sin productos de competencia relevados.</p>`}
+      ${mp?`<h4 class="sec" style="margin-top:16px">Marca blanca: ${h(mp)}</h4>${d.mb.length?`<div class="tbl-wrap"><table class="t cmp-t">${COMP_HEAD}<tbody>${d.mb.sort((x,y)=>(x.categoria||"").localeCompare(y.categoria||"")||x.producto.localeCompare(y.producto)).map(compRowHTML).join("")}</tbody></table></div>`:`<p class="muted small">Sin productos de ${h(mp)} relevados.</p>`}`:""}`}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-sum="${c.id}">📥 Resumen del mes de ${h(c.name)}</button></div>
+    </div></details>`}
+  html+=`</div>`;
   v.innerHTML=html;
-  bindTeamNote(v,items);
-  v.querySelector("#compDet").addEventListener("toggle",e=>{S.compDetOpen=e.target.open;const sp=e.target.querySelector("summary .small");if(sp)sp.textContent=sp.textContent.replace(/tocá para .*/,"tocá para "+(e.target.open?"cerrar":"ver todos los productos"));e.target.querySelector("summary h3").textContent=(e.target.open?"▾":"▸")+" Detalle"});
-  v.querySelectorAll("[data-delc]").forEach(b=>b.onclick=()=>Store.del("competencia",b.dataset.delc));
+  v.querySelectorAll("details.cmp-cad").forEach(dt=>dt.addEventListener("toggle",()=>{dt.open?S.compOpen.add(dt.dataset.cid):S.compOpen.delete(dt.dataset.cid)}));
+  v.querySelectorAll("[data-sum]").forEach(b=>b.onclick=()=>downloadMonthSummary(b.dataset.sum));
+  v.querySelectorAll("[data-delc]").forEach(b=>b.onclick=async e=>{e.preventDefault();if(await askConfirm("¿Borrar este registro cargado a mano?"))Store.del("competencia",b.dataset.delc)});
 }
+
 function insightData(items){
   const a=ym()+"-01",b=ym()+"-"+pad(daysIn(S.y,S.m));const avg=x=>x.length?x.reduce((s,v)=>s+v,0)/x.length:null;
   return (S.compCat?[S.compCat]:Object.keys(CATS)).map(k=>{
